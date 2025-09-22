@@ -8,69 +8,44 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
 
-  // 1) Récupère le contexte (boardId, itemId, etc.)
-  useEffect(() => {
-    monday.get("context").then(({ data }) => {
-      setContext(data);
-    }).catch((e) => setError("Erreur contexte: " + e?.message));
-  }, []);
-
-  // 2) Quand on a le boardId, on charge quelques items via GraphQL
+  
 useEffect(() => {
-  const bid = context?.boardId;
-  if (!bid) return;
+  const boardId = context?.boardId;
+  if (!boardId) return;
 
-  const run = async () => {
-    // 1) tentative avec ID (chaîne)
-    let res = await monday.api(
-      `
-      query ($ids: [ID!]!) {
-        boards(ids: $ids) {
-          id
-          name
-          items(limit: 50) { id name }
-        }
+  const query = `
+    query ($boardId: ID!, $limit: Int!) {
+      items_page_by_board(board_id: $boardId, limit: $limit) {
+        cursor
+        items { id name }
       }
-      `,
-      { variables: { ids: [String(bid)] } }
-    );
-
-    // 2) si GraphQL signale une erreur de validation, on essaie en Int
-    if (res?.errors?.length) {
-      const n = Number(bid);
-      const intRes = await monday.api(
-        `
-        query ($ids: [Int!]!) {
-          boards(ids: $ids) {
-            id
-            name
-            items(limit: 50) { id name }
-          }
-        }
-        `,
-        { variables: { ids: [n] } }
-      );
-      // on remplace par la réponse de fallback
-      res = intRes;
     }
+  `;
 
-    // 3) gestion d’erreurs GraphQL lisible
-    if (res?.errors?.length) {
-      const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
-      setError("Erreur API Monday: " + (msg || "GraphQL error"));
+  monday
+    .api(query, { variables: { boardId: String(boardId), limit: 50 } })
+    .then((res) => {
+      if (res?.errors?.length) {
+        const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
+        setError("Erreur API Monday: " + (msg || "GraphQL error"));
+        setItems([]);
+        return;
+      }
+      const list = res?.data?.items_page_by_board?.items ?? [];
+      setItems(list);
+      setError("");
+    })
+    .catch((err) => {
+      const msg =
+        err?.error_message || err?.message ||
+        (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
+        "Erreur inconnue";
+      setError("Erreur API Monday: " + msg);
       setItems([]);
-      return;
-    }
-
-    const list = res?.data?.boards?.[0]?.items ?? [];
-    setItems(list);
-    setError("");
-  };
-
-  run().catch((e) => {
-    setError("Erreur réseau/SDK: " + (e?.message || e));
-  });
+    });
 }, [context]);
+
+
 
 
   return (
