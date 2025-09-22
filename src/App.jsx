@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import mondaySdk from "monday-sdk-js";
 const monday = mondaySdk();
-const BUILD = "v7"; // juste pour vérifier qu'on voit bien la dernière version
+const BUILD = "v8";
 
 export default function App() {
   const [context, setContext] = useState(null);
@@ -9,13 +9,15 @@ export default function App() {
   const [error, setError] = useState("");
   const [debug, setDebug] = useState("");
 
-  // Contexte
+  // Contexte (écoute + fallback)
   useEffect(() => {
     monday.listen("context", ({ data }) => setContext(data));
-    monday.get("context").then(({ data }) => setContext((p) => p ?? data));
+    monday.get("context")
+      .then(({ data }) => setContext((prev) => prev ?? data))
+      .catch((e) => setError("Erreur contexte: " + (e?.message || e)));
   }, []);
 
-  // Boards → items (compat universelle avec ID string)
+  // Récupération via Query.items (puis filtre par board côté JS)
   useEffect(() => {
     const boardId = context?.boardId;
     if (!boardId) return;
@@ -23,30 +25,36 @@ export default function App() {
     let cancelled = false;
 
     const query = `
-      query ($ids: [ID!]!, $limit: Int!) {
-        boards(ids: $ids) {
+      query ($limit: Int!) {
+        items(limit: $limit) {
           id
-          items(limit: $limit) { id name }
+          name
+          board { id }
         }
       }
     `;
 
-    monday.api(query, { variables: { ids: [String(boardId)], limit: 50 } })
+    monday.api(query, { variables: { limit: 100 } })
       .then((res) => {
         if (cancelled) return;
 
         if (res?.errors?.length) {
           const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
           setError("Erreur API Monday: " + (msg || "GraphQL error"));
-          setDebug(JSON.stringify({ step: "boards→items", errors: res.errors }, null, 2));
+          setDebug(JSON.stringify({ step: "Query.items", errors: res.errors }, null, 2));
           setItems([]);
           return;
         }
 
-        const list = res?.data?.boards?.[0]?.items ?? [];
+        const all = res?.data?.items ?? [];
+        const bid = String(boardId);
+        const list = all
+          .filter((it) => String(it?.board?.id) === bid)
+          .map(({ id, name }) => ({ id, name }));
+
         setItems(list);
         setError("");
-        setDebug(JSON.stringify({ boardsReturned: res?.data?.boards?.length || 0, items: list.length }, null, 2));
+        setDebug(JSON.stringify({ totalReturned: all.length, keptForBoard: list.length }, null, 2));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -74,7 +82,7 @@ export default function App() {
 
       {!!items.length && (
         <>
-          <h2>Items (50 max)</h2>
+          <h2>Items (max 100)</h2>
           <ul>{items.map(it => <li key={it.id}>{it.id} — {it.name}</li>)}</ul>
         </>
       )}
