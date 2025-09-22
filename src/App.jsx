@@ -9,22 +9,16 @@ export default function App() {
   const [error, setError] = useState("");
   const [debug, setDebug] = useState("");
 
-  // -- 1) Contexte (écoute + fallback get) ------------------------------
+  // 1) Contexte (écoute + fallback)
   useEffect(() => {
-    // Écoute en temps réel (souvent le plus fiable dans l’embed)
     monday.listen("context", ({ data }) => setContext(data));
-
-    // Lecture immédiate (fallback)
     monday
       .get("context")
       .then(({ data }) => setContext((prev) => prev ?? data))
       .catch((e) => setError("Erreur contexte: " + (e?.message || e)));
   }, []);
 
-  // -- 2) Charger des items du board courant ----------------------------
-  // Stratégie simple et compatible :
-  //   - on appelle items_page(limit: N)
-  //   - on filtre côté JS sur board.id === context.boardId
+  // 2) Charger les items via boards(ids: [ID!]) { items }
   useEffect(() => {
     const boardId = context?.boardId;
     if (!boardId) return;
@@ -32,60 +26,51 @@ export default function App() {
     let cancelled = false;
 
     const query = `
-      query ($limit: Int!) {
-        items_page(limit: $limit) {
-          items { id name board { id } }
+      query ($ids: [ID!]!, $limit: Int!) {
+        boards(ids: $ids) {
+          id
+          name
+          items(limit: $limit) {
+            id
+            name
+          }
         }
       }
     `;
 
     monday
-      .api(query, { variables: { limit: 50 } })
+      .api(query, { variables: { ids: [String(boardId)], limit: 50 } })
       .then((res) => {
         if (cancelled) return;
 
         if (res?.errors?.length) {
-          // Affiche le détail dans le bloc "Debug GraphQL"
-          setError("Graphql validation errors");
-          setDebug(
-            JSON.stringify(
-              { step: "items_page", errors: res.errors },
-              null,
-              2
-            )
-          );
+          const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
+          setError("Erreur API Monday: " + (msg || "GraphQL error"));
+          setDebug(JSON.stringify({ step: "boards→items", errors: res.errors }, null, 2));
           setItems([]);
           return;
         }
 
-        const all = res?.data?.items_page?.items ?? [];
-        const bid = String(boardId);
-        const list = all
-          .filter((it) => String(it?.board?.id) === bid)
-          .map(({ id, name }) => ({ id, name }));
-
+        const list = res?.data?.boards?.[0]?.items ?? [];
         setItems(list);
         setError("");
-        setDebug(JSON.stringify({ totalReturned: all.length, keptForBoard: list.length }, null, 2));
+        setDebug(JSON.stringify({ boardsReturned: res?.data?.boards?.length || 0, items: list.length }, null, 2));
       })
       .catch((err) => {
         if (cancelled) return;
         const msg =
           err?.error_message ||
           err?.message ||
-          (Array.isArray(err?.errors) && err.errors.map((e) => e?.message).join(" | ")) ||
+          (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
           "Erreur inconnue";
         setError("Erreur API Monday: " + msg);
         setDebug(JSON.stringify(err, null, 2));
         setItems([]);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [context?.boardId]);
 
-  // -- 3) Rendu ----------------------------------------------------------
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", padding: 16 }}>
       <h1>✅ Intégration Monday (embarqué)</h1>
@@ -104,9 +89,7 @@ export default function App() {
           <h2>Items (50 max)</h2>
           <ul>
             {items.map((it) => (
-              <li key={it.id}>
-                {it.id} — {it.name}
-              </li>
+              <li key={it.id}>{it.id} — {it.name}</li>
             ))}
           </ul>
         </>
