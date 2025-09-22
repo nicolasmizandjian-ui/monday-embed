@@ -1,106 +1,105 @@
 import React, { useEffect, useState } from "react";
 import mondaySdk from "monday-sdk-js";
-
 const monday = mondaySdk();
 
 export default function App() {
   const [context, setContext] = useState(null);
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
+  const [debug, setDebug] = useState("");
 
-  // 1) Contexte (listen + fallback get)
+  // Contexte
   useEffect(() => {
-    const onCtx = ({ data }) => { setContext(data); setError(""); };
-    monday.listen("context", onCtx);
-
-    monday.get("context")
-      .then(({ data }) => setContext((prev) => prev ?? data))
-      .catch((e) => setError("Erreur contexte: " + (e?.message || e)));
-
-    // pas d'API d'unsubscribe officielle; on laisse comme ça
+    monday.listen("context", ({ data }) => setContext(data));
+    monday.get("context").then(({ data }) => setContext((p) => p ?? data));
   }, []);
 
-  // 2) Charger des items du board, avec fallbacks selon le schéma GraphQL
+  // Helper: exécute une requête et log
+  const run = async (label, query, variables) => {
+    const res = await monday.api(query, { variables });
+    // trace console + stocke le dernier résultat pour affichage
+    console.log(label, { variables, res });
+    if (res?.errors?.length) {
+      setDebug(
+        `${label}\n` +
+        JSON.stringify({ variables, errors: res.errors }, null, 2)
+      );
+      throw new Error(
+        res.errors.map(e => e?.message).filter(Boolean).join(" | ") ||
+        "GraphQL validation errors"
+      );
+    }
+    setDebug(`${label}\n${JSON.stringify(res.data, null, 2)}`);
+    return res.data;
+  };
+
+  // Chargement items avec fallbacks
   useEffect(() => {
     const boardId = context?.boardId;
     const workspaceId = context?.workspaceId;
     if (!boardId) return;
 
     let cancelled = false;
-    const asID = String(boardId);
-    const widInt = Number(workspaceId);
-
-    const tryItemsPageByBoard = () =>
-      monday.api(
-        `query ($bid: ID!, $limit: Int!) {
-           items_page_by_board(board_id: $bid, limit: $limit) {
-             items { id name }
-           }
-         }`,
-        { variables: { bid: asID, limit: 50 } }
-      );
-
-    const tryItemsPageWorkspace = () =>
-      monday.api(
-        `query ($wid: Int!, $limit: Int!) {
-           items_page(limit: $limit, query_params: { workspace_ids: [$wid] }) {
-             items { id name board { id } }
-           }
-         }`,
-        { variables: { wid: widInt, limit: 50 } }
-      );
-
-    const tryItemsPageAll = () =>
-      monday.api(
-        `query ($limit: Int!) {
-           items_page(limit: $limit) {
-             items { id name board { id } }
-           }
-         }`,
-        { variables: { limit: 50 } }
-      );
 
     (async () => {
       try {
-        // A) moderne : items_page_by_board
-        let res = await tryItemsPageByBoard();
+        // A) items_page_by_board (ID!)
+        const qA = `
+          query ($bid: ID!, $limit: Int!) {
+            items_page_by_board(board_id: $bid, limit: $limit) {
+              items { id name }
+            }
+          }`;
+        let data = await run("A: items_page_by_board", qA, { bid: String(boardId), limit: 50 });
 
-        // B) si erreur de validation → items_page par workspace
-        if (res?.errors?.length) res = await tryItemsPageWorkspace();
-
-        // C) si encore erreur → items_page “général”
-        if (res?.errors?.length) res = await tryItemsPageAll();
-
-        if (cancelled) return;
-
-        if (res?.errors?.length) {
-          const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
-          throw new Error(msg || "GraphQL validation errors");
-        }
-
-        // Normaliser + (si besoin) filtrer par board côté JS
         let list =
-          res?.data?.items_page_by_board?.items ??
-          res?.data?.items_page?.items ??
+          data?.items_page_by_board?.items ??
           [];
 
-        if (list.length && list[0]?.board) {
-          const bid = String(boardId);
-          list = list.filter(it => String(it.board?.id) === bid)
-                     .map(({ id, name }) => ({ id, name }));
-        }
-
+        // Si A a échoué on n'arrive pas ici; sinon on affiche
         setItems(list);
         setError("");
-      } catch (err) {
-        if (cancelled) return;
-        const msg =
-          err?.message ||
-          err?.error_message ||
-          (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
-          "Erreur inconnue";
-        setError("Erreur API Monday: " + msg);
-        setItems([]);
+      } catch (eA) {
+        try {
+          // B) items_page filtré par workspace (évite boardId Int32)
+          const qB = `
+            query ($wid: Int!, $limit: Int!) {
+              items_page(limit: $limit, query_params: { workspace_ids: [$wid] }) {
+                items { id name board { id } }
+              }
+            }`;
+          const data = await run("B: items_page (workspace filter)", qB, {
+            wid: Number(workspaceId),
+            limit: 50,
+          });
+          let list = data?.items_page?.items ?? [];
+          // filtre JS sur le board courant
+          const bidStr = String(boardId);
+          list = list.filter(it => String(it.board?.id) === bidStr)
+                     .map(({ id, name }) => ({ id, name }));
+          setItems(list);
+          setError("");
+        } catch (eB) {
+          try {
+            // C) items_page sans filtre, puis filtrage JS
+            const qC = `
+              query ($limit: Int!) {
+                items_page(limit: $limit) {
+                  items { id name board { id } }
+                }
+              }`;
+            const data = await run("C: items_page (no filter)", qC, { limit: 50 });
+            let list = data?.items_page?.items ?? [];
+            const bidStr = String(boardId);
+            list = list.filter(it => String(it.board?.id) === bidStr)
+                       .map(({ id, name }) => ({ id, name }));
+            setItems(list);
+            setError("");
+          } catch (eC) {
+            setError("Erreur API Monday: " + (eC?.message || "inconnue"));
+            setItems([]);
+          }
+        }
       }
     })();
 
@@ -125,17 +124,18 @@ export default function App() {
       {!!items.length && (
         <>
           <h2>Items (50 max)</h2>
-          <ul>
-            {items.map((it) => (
-              <li key={it.id}>{it.id} — {it.name}</li>
-            ))}
-          </ul>
+          <ul>{items.map(it => <li key={it.id}>{it.id} — {it.name}</li>)}</ul>
         </>
       )}
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {!items.length && context?.boardId && !error && (
-        <p>Aucun item trouvé (ou droits manquants).</p>
+
+      {/* bloc debug pour voir l’erreur exacte */}
+      {debug && (
+        <details style={{ marginTop: 16 }}>
+          <summary>Debug GraphQL</summary>
+          <pre style={{ whiteSpace: "pre-wrap" }}>{debug}</pre>
+        </details>
       )}
     </div>
   );
