@@ -16,29 +16,38 @@ export default function App() {
   }, []);
 
   // 2) Quand on a le boardId, on charge quelques items via GraphQL
-  useEffect(() => {
-    const boardId = context?.boardId;
-    if (!boardId) return;
+useEffect(() => {
+  const boardId = context?.boardId;
+  if (!boardId) return;
 
-    const query = `
-      query ($boardId: [Int]) {
-        boards (ids: $boardId) {
+  const query = `
+    query ($boardIds: [ID!]!) {
+      boards(ids: $boardIds) {
+        id
+        name
+        items(limit: 50) {
           id
           name
-          items (limit: 50) {
-            id
-            name
-          }
         }
       }
-    `;
-    monday.api(query, { variables: { boardId } })
-      .then((res) => {
-        const items = res?.data?.boards?.[0]?.items ?? [];
-        setItems(items);
-      })
-      .catch((e) => setError("Erreur API Monday: " + (e?.message || "")));
-  }, [context]);
+    }
+  `;
+
+  monday
+    .api(query, { variables: { boardIds: [String(boardId)] } }) // <-- ID = string
+    .then((res) => {
+      const items = res?.data?.boards?.[0]?.items ?? [];
+      setItems(items);
+      setError("");
+    })
+    .catch((err) => {
+      // Affiche le vrai message GraphQL pour debug
+      const list = err?.errors?.map(e => e?.message).filter(Boolean) || [];
+      const msg = list.length ? list.join(" | ") : (err?.message || "Erreur inconnue");
+      setError("Erreur API Monday: " + msg);
+    });
+}, [context]);
+
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
