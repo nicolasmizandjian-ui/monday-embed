@@ -33,78 +33,89 @@ export default function App() {
     return res.data;
   };
 
-  // Chargement items avec fallbacks
-  useEffect(() => {
-    const boardId = context?.boardId;
-    const workspaceId = context?.workspaceId;
-    if (!boardId) return;
+// Chargement items avec fallbacks (A → B? → C → D)
+useEffect(() => {
+  const boardId = context?.boardId;
+  const workspaceId = context?.workspaceId;
+  if (!boardId) return;
 
-    let cancelled = false;
+  const bidStr = String(boardId);
+  const widNum = Number(workspaceId);
+  const hasWid = Number.isInteger(widNum);
 
-    (async () => {
-      try {
-        // A) items_page_by_board (ID!)
-        const qA = `
-          query ($bid: ID!, $limit: Int!) {
-            items_page_by_board(board_id: $bid, limit: $limit) {
-              items { id name }
-            }
-          }`;
-        let data = await run("A: items_page_by_board", qA, { bid: String(boardId), limit: 50 });
+  let cancelled = false;
 
-        let list =
-          data?.items_page_by_board?.items ??
-          [];
+  (async () => {
+    try {
+      // A) items_page_by_board
+      const qA = `
+        query ($bid: ID!, $limit: Int!) {
+          items_page_by_board(board_id: $bid, limit: $limit) {
+            items { id name }
+          }
+        }`;
+      let data = await run("A: items_page_by_board", qA, { bid: bidStr, limit: 50 });
+      setItems(data?.items_page_by_board?.items ?? []);
+      setError("");
+      return;
+    } catch {}
 
-        // Si A a échoué on n'arrive pas ici; sinon on affiche
+    try {
+      // B) items_page filtré par workspace (seulement si wid valide)
+      if (!hasWid) throw new Error("skip B (no workspaceId)");
+      const qB = `
+        query ($wid: Int!, $limit: Int!) {
+          items_page(limit: $limit, query_params: { workspace_ids: [$wid] }) {
+            items { id name board { id } }
+          }
+        }`;
+      const data = await run("B: items_page (workspace filter)", qB, { wid: widNum, limit: 50 });
+      let list = data?.items_page?.items ?? [];
+      list = list.filter(it => String(it.board?.id) === bidStr).map(({ id, name }) => ({ id, name }));
+      setItems(list);
+      setError("");
+      return;
+    } catch {}
+
+    try {
+      // C) items_page sans filtre + filtrage JS
+      const qC = `
+        query ($limit: Int!) {
+          items_page(limit: $limit) {
+            items { id name board { id } }
+          }
+        }`;
+      const data = await run("C: items_page (no filter)", qC, { limit: 50 });
+      let list = data?.items_page?.items ?? [];
+      list = list.filter(it => String(it.board?.id) === bidStr).map(({ id, name }) => ({ id, name }));
+      if (list.length) {
         setItems(list);
         setError("");
-      } catch (eA) {
-        try {
-          // B) items_page filtré par workspace (évite boardId Int32)
-          const qB = `
-            query ($wid: Int!, $limit: Int!) {
-              items_page(limit: $limit, query_params: { workspace_ids: [$wid] }) {
-                items { id name board { id } }
-              }
-            }`;
-          const data = await run("B: items_page (workspace filter)", qB, {
-            wid: Number(workspaceId),
-            limit: 50,
-          });
-          let list = data?.items_page?.items ?? [];
-          // filtre JS sur le board courant
-          const bidStr = String(boardId);
-          list = list.filter(it => String(it.board?.id) === bidStr)
-                     .map(({ id, name }) => ({ id, name }));
-          setItems(list);
-          setError("");
-        } catch (eB) {
-          try {
-            // C) items_page sans filtre, puis filtrage JS
-            const qC = `
-              query ($limit: Int!) {
-                items_page(limit: $limit) {
-                  items { id name board { id } }
-                }
-              }`;
-            const data = await run("C: items_page (no filter)", qC, { limit: 50 });
-            let list = data?.items_page?.items ?? [];
-            const bidStr = String(boardId);
-            list = list.filter(it => String(it.board?.id) === bidStr)
-                       .map(({ id, name }) => ({ id, name }));
-            setItems(list);
-            setError("");
-          } catch (eC) {
-            setError("Erreur API Monday: " + (eC?.message || "inconnue"));
-            setItems([]);
-          }
-        }
+        return;
       }
-    })();
+    } catch {}
 
-    return () => { cancelled = true; };
-  }, [context?.boardId, context?.workspaceId]);
+    try {
+      // D) boards(ids: …) ultra compatible
+      const qD = `
+        query ($bids: [ID!]!, $limit: Int!) {
+          boards(ids: $bids) {
+            items (limit: $limit) { id name }
+          }
+        }`;
+      const data = await run("D: boards → items(limit)", qD, { bids: [bidStr], limit: 50 });
+      const list = data?.boards?.[0]?.items ?? [];
+      setItems(list);
+      setError("");
+    } catch (e) {
+      if (cancelled) return;
+      setError("Erreur API Monday: " + (e?.message || "inconnue"));
+      setItems([]);
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, [context?.boardId, context?.workspaceId]);
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
