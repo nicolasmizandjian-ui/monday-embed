@@ -24,71 +24,47 @@ export default function App() {
     return res.data;
   };
 
-  // Chargement des items avec fallbacks
-  useEffect(() => {
-    const boardId = context?.boardId;
-    const workspaceId = context?.workspaceId;
-    if (!boardId) return;
+// Charger les items du board (schema-agnostic)
+useEffect(() => {
+  const boardId = context?.boardId;
+  if (!boardId) return;
 
-    let cancelled = false;
-    const bidStr = String(boardId);
-    const widNum = Number(workspaceId);
-    const hasWid = Number.isInteger(widNum);
+  let cancelled = false;
 
-    (async () => {
-      try {
-        // A) Schéma récent
-        const qA = `
-          query ($bid: ID!, $limit: Int!) {
-            items_page_by_board(board_id: $bid, limit: $limit) {
-              items { id name }
-            }
-          }`;
-        const dA = await run("A items_page_by_board", qA, { bid: bidStr, limit: 50 });
-        if (!cancelled) { setItems(dA?.items_page_by_board?.items ?? []); setError(""); }
-        return;
-      } catch (eA) {
-        // continue
+  const query = `
+    query ($bids: [ID!]!, $limit: Int!) {
+      items_page(limit: $limit, query_params: { board_ids: $bids }) {
+        items { id name }
       }
+    }
+  `;
 
-      try {
-        // B) Fallback par workspace (évite l’ID de board > Int32)
-        if (!hasWid) throw new Error("skip B");
-        const qB = `
-          query ($wid: Int!, $limit: Int!) {
-            items_page(limit: $limit, query_params: { workspace_ids: [$wid] }) {
-              items { id name board { id } }
-            }
-          }`;
-        const dB = await run("B items_page(workspace)", qB, { wid: widNum, limit: 50 });
-        let list = dB?.items_page?.items ?? [];
-        list = list.filter(it => String(it.board?.id) === bidStr).map(({ id, name }) => ({ id, name }));
-        if (!cancelled) { setItems(list); setError(""); }
+  monday
+    .api(query, { variables: { bids: [String(boardId)], limit: 50 } })
+    .then((res) => {
+      if (cancelled) return;
+      if (res?.errors?.length) {
+        const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
+        setError("Erreur API Monday: " + (msg || "GraphQL error"));
+        setItems([]);
         return;
-      } catch (eB) {
-        // continue
       }
+      setItems(res?.data?.items_page?.items ?? []);
+      setError("");
+    })
+    .catch((err) => {
+      if (cancelled) return;
+      const msg =
+        err?.error_message ||
+        err?.message ||
+        (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
+        "Erreur inconnue";
+      setError("Erreur API Monday: " + msg);
+      setItems([]);
+    });
 
-      try {
-        // C) Fallback générique puis filtrage JS
-        const qC = `
-          query ($limit: Int!) {
-            items_page(limit: $limit) {
-              items { id name board { id } }
-            }
-          }`;
-        const dC = await run("C items_page(all)", qC, { limit: 50 });
-        let list = dC?.items_page?.items ?? [];
-        list = list.filter(it => String(it.board?.id) === bidStr).map(({ id, name }) => ({ id, name }));
-        if (!cancelled) { setItems(list); setError(""); }
-        return;
-      } catch (eC) {
-        if (!cancelled) { setError(String(eC?.message || eC)); setItems([]); }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [context?.boardId, context?.workspaceId]);
+  return () => { cancelled = true; };
+}, [context?.boardId]);
 
   return (
     <div style={{ fontFamily: "system-ui", padding: 16 }}>
