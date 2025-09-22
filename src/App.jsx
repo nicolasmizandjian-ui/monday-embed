@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import mondaySdk from "monday-sdk-js";
-
 const monday = mondaySdk();
 
 export default function App() {
@@ -8,73 +7,107 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
 
-  // 1) Récupère le contexte (boardId, itemId, etc.)
+  // 1) Contexte (listen + fallback get)
   useEffect(() => {
-    monday
-      .get("context")
+    monday.listen("context", (res) => {
+      setContext(res.data);
+      setError("");
+    });
+    monday.get("context")
       .then(({ data }) => {
-        setContext(data);
+        setContext((prev) => prev ?? data);
         setError("");
       })
-      .catch((err) => {
-        const msg = err?.message || err?.error_message || "Erreur inconnue";
-        setError("Erreur contexte: " + msg);
-      });
+      .catch((e) => setError("Erreur contexte: " + (e?.message || e)));
   }, []);
 
-  // 2) Quand on a le boardId, on charge quelques items via GraphQL
+  // 2) Chargement des items (robuste selon ton schéma GraphQL)
   useEffect(() => {
     const boardId = context?.boardId;
-    if (!boardId) {
-      setItems([]);
-      setError("");
-      return;
-    }
+    if (!boardId) return;
 
-    let isActive = true;
+    let cancelled = false;
+    const asID = String(boardId);
+    const asInt = Number(boardId);
+    const canUseInt = Number.isInteger(asInt) && asInt <= 2147483647;
 
-    const query = `
-      query ($boardId: ID!, $limit: Int!) {
-        items_page_by_board(board_id: $boardId, limit: $limit) {
-          cursor
-          items { id name }
-        }
-      }
-    `;
+    const tryItemsPageByBoard = () =>
+      monday.api(
+        `
+        query ($boardId: ID!, $limit: Int!) {
+          items_page_by_board(board_id: $boardId, limit: $limit) {
+            items { id name }
+          }
+        }`,
+        { variables: { boardId: asID, limit: 50 } }
+      );
 
-    monday
-      .api(query, { variables: { boardId: String(boardId), limit: 50 } })
-      .then((res) => {
-        if (!isActive) return;
+    const tryItemsPage = () =>
+      monday.api(
+        `
+        query ($bid: ID!, $limit: Int!) {
+          items_page(limit: $limit, query_params: { board_ids: [$bid] }) {
+            items { id name }
+          }
+        }`,
+        { variables: { bid: asID, limit: 50 } }
+      );
 
+    const tryBoardsItemsInt = () =>
+      monday.api(
+        `
+        query ($ids: [Int!], $limit: Int!) {
+          boards(ids: $ids) {
+            id
+            items(limit: $limit) { id name }
+          }
+        }`,
+        { variables: { ids: [asInt], limit: 50 } }
+      );
+
+    (async () => {
+      try {
+        // 1) items_page_by_board (schéma récent)
+        let res = await tryItemsPageByBoard();
         if (res?.errors?.length) {
-          const msg = res.errors.map((e) => e?.message).filter(Boolean).join(" | ");
-          setError("Erreur API Monday: " + (msg || "GraphQL error"));
-          setItems([]);
-          return;
+          const txt = res.errors.map(e => e?.message).join(" | ");
+          // 2) items_page (schéma alternatif)
+          res = await tryItemsPage();
+          if (res?.errors?.length) {
+            // 3) vieux schéma: boards(ids:Int) si possible
+            if (canUseInt) {
+              res = await tryBoardsItemsInt();
+            }
+          }
+          // si toujours des erreurs, on les remontera plus bas
+          if (res?.errors?.length) {
+            throw new Error(txt + " | " + res.errors.map(e => e?.message).join(" | "));
+          }
         }
 
-        const list = res?.data?.items_page_by_board?.items ?? [];
+        if (cancelled) return;
+        const list =
+          res?.data?.items_page_by_board?.items ??
+          res?.data?.items_page?.items ??
+          res?.data?.boards?.[0]?.items ??
+          [];
+
         setItems(list);
         setError("");
-      })
-      .catch((err) => {
-        if (!isActive) return;
-
+      } catch (err) {
+        if (cancelled) return;
         const msg =
-          err?.error_message ||
           err?.message ||
-          (Array.isArray(err?.errors) && err.errors.map((e) => e?.message).join(" | ")) ||
+          err?.error_message ||
+          (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
           "Erreur inconnue";
         setError("Erreur API Monday: " + msg);
         setItems([]);
-      });
+      }
+    })();
 
-    return () => {
-      isActive = false;
-    };
+    return () => { cancelled = true; };
   }, [context?.boardId]);
-
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", padding: 16 }}>
