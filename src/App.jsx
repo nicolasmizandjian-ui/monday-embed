@@ -17,35 +17,59 @@ export default function App() {
 
   // 2) Quand on a le boardId, on charge quelques items via GraphQL
 useEffect(() => {
-  const boardId = context?.boardId;
-  if (!boardId) return;
+  const bid = context?.boardId;
+  if (!bid) return;
 
-  const query = `
-    query ($boardIds: [ID!]!) {
-      boards(ids: $boardIds) {
-        id
-        name
-        items(limit: 50) {
+  const run = async () => {
+    // 1) tentative avec ID (chaîne)
+    let res = await monday.api(
+      `
+      query ($ids: [ID!]!) {
+        boards(ids: $ids) {
           id
           name
+          items(limit: 50) { id name }
         }
       }
-    }
-  `;
+      `,
+      { variables: { ids: [String(bid)] } }
+    );
 
-  monday
-    .api(query, { variables: { boardIds: [String(boardId)] } }) // <-- ID = string
-    .then((res) => {
-      const items = res?.data?.boards?.[0]?.items ?? [];
-      setItems(items);
-      setError("");
-    })
-    .catch((err) => {
-      // Affiche le vrai message GraphQL pour debug
-      const list = err?.errors?.map(e => e?.message).filter(Boolean) || [];
-      const msg = list.length ? list.join(" | ") : (err?.message || "Erreur inconnue");
-      setError("Erreur API Monday: " + msg);
-    });
+    // 2) si GraphQL signale une erreur de validation, on essaie en Int
+    if (res?.errors?.length) {
+      const n = Number(bid);
+      const intRes = await monday.api(
+        `
+        query ($ids: [Int!]!) {
+          boards(ids: $ids) {
+            id
+            name
+            items(limit: 50) { id name }
+          }
+        }
+        `,
+        { variables: { ids: [n] } }
+      );
+      // on remplace par la réponse de fallback
+      res = intRes;
+    }
+
+    // 3) gestion d’erreurs GraphQL lisible
+    if (res?.errors?.length) {
+      const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
+      setError("Erreur API Monday: " + (msg || "GraphQL error"));
+      setItems([]);
+      return;
+    }
+
+    const list = res?.data?.boards?.[0]?.items ?? [];
+    setItems(list);
+    setError("");
+  };
+
+  run().catch((e) => {
+    setError("Erreur réseau/SDK: " + (e?.message || e));
+  });
 }, [context]);
 
 
