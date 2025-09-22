@@ -1,7 +1,7 @@
-imporimport React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import mondaySdk from "monday-sdk-js";
 const monday = mondaySdk();
-const BUILD = "v9";
+const BUILD = "v10";
 
 export default function App() {
   const [context, setContext] = useState(null);
@@ -9,54 +9,81 @@ export default function App() {
   const [error, setError] = useState("");
   const [debug, setDebug] = useState("");
 
-  // 1) Contexte (écoute + fallback)
+  // 1) Contexte
   useEffect(() => {
     monday.listen("context", ({ data }) => setContext(data));
-    monday.get("context")
-      .then(({ data }) => setContext((prev) => prev ?? data))
-      .catch((e) => setError("Erreur contexte: " + (e?.message || e)));
+    monday.get("context").then(({ data }) => setContext((p) => p ?? data));
   }, []);
 
-  // 2) Items via next_items_page (→ board_ids: [ID!]!)
+  // 2) Étape A: next_items_page -> IDs, Étape B: items(ids: …) -> détails
   useEffect(() => {
     const boardId = context?.boardId;
     if (!boardId) return;
 
     let cancelled = false;
 
-    const query = `
+    const qList = `
       query ($bids: [ID!]!, $limit: Int!) {
         next_items_page(limit: $limit, query_params: { board_ids: $bids }) {
           cursor
-          items { id name }
+          items { id }
         }
       }
     `;
+    const qItems = `
+      query ($ids: [ID!]!) {
+        items(ids: $ids) { id name }
+      }
+    `;
 
-    monday.api(query, { variables: { bids: [String(boardId)], limit: 50 } })
-      .then((res) => {
+    (async () => {
+      try {
+        // A) récupérer la liste d'IDs du board
+        const listRes = await monday.api(qList, {
+          variables: { bids: [String(boardId)], limit: 50 },
+        });
         if (cancelled) return;
 
-        if (res?.errors?.length) {
-          const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
-          setError("Erreur API Monday: " + (msg || "GraphQL error"));
-          setDebug(JSON.stringify({ step: "next_items_page", errors: res.errors }, null, 2));
+        if (listRes?.errors?.length) {
+          const msg = listRes.errors.map(e => e?.message).filter(Boolean).join(" | ");
+          setError("Erreur API Monday (liste IDs): " + (msg || "GraphQL error"));
+          setDebug(JSON.stringify({ step: "A next_items_page", errors: listRes.errors }, null, 2));
           setItems([]);
           return;
         }
 
-        const list = res?.data?.next_items_page?.items ?? [];
+        const ids = (listRes?.data?.next_items_page?.items ?? []).map(it => String(it.id));
+        if (!ids.length) {
+          setItems([]);
+          setError("");
+          setDebug(JSON.stringify({ step: "A next_items_page", idsCount: 0 }, null, 2));
+          return;
+        }
+
+        // B) récupérer les détails via items(ids: …)
+        const itemsRes = await monday.api(qItems, { variables: { ids } });
+        if (cancelled) return;
+
+        if (itemsRes?.errors?.length) {
+          const msg = itemsRes.errors.map(e => e?.message).filter(Boolean).join(" | ");
+          setError("Erreur API Monday (items par IDs): " + (msg || "GraphQL error"));
+          setDebug(JSON.stringify({ step: "B items(ids)", errors: itemsRes.errors, ids }, null, 2));
+          setItems([]);
+          return;
+        }
+
+        const list = itemsRes?.data?.items ?? [];
         setItems(list);
         setError("");
-        setDebug(JSON.stringify({ items: list.length }, null, 2));
-      })
-      .catch((err) => {
+        setDebug(JSON.stringify({ step: "OK", ids: ids.length, items: list.length }, null, 2));
+      } catch (err) {
         if (cancelled) return;
         const msg = err?.message || err?.error_message || "Erreur inconnue";
         setError("Erreur API Monday: " + msg);
         setDebug(JSON.stringify(err, null, 2));
         setItems([]);
-      });
+      }
+    })();
 
     return () => { cancelled = true; };
   }, [context?.boardId]);
