@@ -89,3 +89,33 @@
 .ga-lines        { display: grid; gap: 10px; max-height: 380px; overflow: auto; }
 .ga-line-meta    { font-size: 13px; opacity: .85; }
 .ga-modal-buttons { display:flex; gap:8px; margin-top:12px; }
+
+/* === Bigger pastel buttons ========================================== */
+.ga-grid {
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); /* avant 260px */
+  gap: 18px;                                                   /* avant 14px */
+}
+
+.ga-card {
+  padding: 20px 22px;      /* avant 16px 16px */
+  border-radius: 16px;     /* avant 14px */
+  font-size: 18px;         /* avant 16px */
+}
+
+.ga-icon {
+  font-size: 28px;         /* avant 22px */
+  line-height: 28px;
+}
+
+.ga-label {
+  font-weight: 700;        /* un poil plus marqué */
+  font-size: 17px;         /* lisibilité ↑ */
+}
+
+/* Sur mobile, force des blocs bien larges */
+@media (max-width: 900px) {
+  .ga-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
