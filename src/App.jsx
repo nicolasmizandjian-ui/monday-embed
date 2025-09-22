@@ -42,98 +42,153 @@ export default function App() {
   }
 
   /** Lecture “Entrées de Stock” — boards → groups → items (fallback ID/Int) + debug détaillé */
-  async function openStockModal() {
-    setShowStockModal(true);
-    setSelectedSupplier("");
-    setLoading(true);
-    setError("");
-    setDebug("");
-    try {
-      const qID = `
-        query ($id: ID!, $limit: Int!, $cols: [String!]) {
-          boards(ids: [$id]) {
-            groups {
-              id
-              items(limit: $limit) {
-                id
-                name
-                column_values(ids: $cols) { id text }
-              }
-            }
+async function openStockModal() {
+  setShowStockModal(true);
+  setSelectedSupplier("");
+  setLoading(true);
+  setError("");
+  setDebug("");
+
+  // Petite aide pour deviner la colonne "fournisseur"
+  const guessSupplierCol = (columns) => {
+    const norm = (s) => (s || "").toLowerCase();
+    // 1) par titre
+    let c =
+      columns.find((c) => /fournisseur|supplier|vendor/.test(norm(c.title))) ||
+      // 2) par id
+      columns.find((c) => /fourni|supplier|vendor/.test(norm(c.id)));
+    return c?.id || null;
+  };
+
+  // Requête: colonnes + items via groups -> items (compat cluster)
+  const qID = `
+    query ($id: ID!, $limit: Int!) {
+      boards(ids: [$id]) {
+        id
+        name
+        columns { id title type }
+        groups {
+          id
+          title
+          items(limit: $limit) {
+            id
+            name
+            column_values { id text }
           }
-        }`;
-      const qINT = `
-        query ($id: Int!, $limit: Int!, $cols: [String!]) {
-          boards(ids: [$id]) {
-            groups {
-              id
-              items(limit: $limit) {
-                id
-                name
-                column_values(ids: $cols) { id text }
-              }
-            }
+        }
+      }
+    }`;
+  const qINT = `
+    query ($id: Int!, $limit: Int!) {
+      boards(ids: [$id]) {
+        id
+        name
+        columns { id title type }
+        groups {
+          id
+          title
+          items(limit: $limit) {
+            id
+            name
+            column_values { id text }
           }
-        }`;
-      const vars = { limit: 200, cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY] };
-
-      let attempts = [];
-      // 1) Essai en ID
-      let res = await monday.api(qID, { variables: { ...vars, id: String(BOARD_ID) } });
-      if (res?.errors?.length) attempts.push({ variant: "ID", errors: res.errors });
-
-      // 2) Fallback en Int si besoin
-      if (res?.errors?.length) {
-        res = await monday.api(qINT, { variables: { ...vars, id: Number(BOARD_ID) } });
-        if (res?.errors?.length) attempts.push({ variant: "Int", errors: res.errors });
+        }
       }
+    }`;
 
-      if (res?.errors?.length) {
-        setError("Erreur GraphQL : validation errors");
-        setDebug(JSON.stringify({ attempts }, null, 2));
-        return;
-      }
+  try {
+    const vars = { limit: 200 };
 
-      const raw = (res?.data?.boards?.[0]?.groups ?? []).flatMap(g => g?.items ?? []);
-      const normalized = raw.map(it => {
-        const byId = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
-        return {
-          id: it.id,
-          name: it.name,
-          supplier: byId[COL_SUPPLIER] || "",
-          product:  byId[COL_PRODUCT]  || it.name,
-          qty:      byId[COL_QTY]      || "",
-        };
-      });
-
-      setItems(normalized);
-
-      // construit l'index fournisseurs -> nb de lignes
-      const idx = new Map();
-      for (const it of normalized) {
-        const name = (it.supplier || "").trim();
-        if (!name) continue;
-        idx.set(name, (idx.get(name) || 0) + 1);
-      }
-
-      const index = [...idx]
-        .map(([name, count]) => ({ name, count }))
-        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
-
-      setSupplierIndex(index);
-      // garde aussi l’ancienne liste simple si tu en as besoin ailleurs
-      setSuppliers(index.map(x => x.name));
-
-      const uniq = [...new Set(normalized.map(x => x.supplier).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
-      setSuppliers(uniq);
-    } catch (e) {
-      setError("Erreur GraphQL : " + (e?.message || "inconnue"));
-      setDebug(e?.stack || String(e));
-    } finally {
-      setLoading(false);
+    // 1) essai ID
+    let res = await monday.api(qID, { variables: { ...vars, id: String(BOARD_ID) } });
+    // 2) fallback Int
+    if (res?.errors?.length) {
+      res = await monday.api(qINT, { variables: { ...vars, id: Number(BOARD_ID) } });
+      if (res?.errors?.length) throw new Error(res.errors.map((e) => e.message).join(" | "));
     }
+
+    const board = res?.data?.boards?.[0];
+    if (!board) throw new Error("Board introuvable (BOARD_ID incorrect ?)");
+
+    // Déterminer la bonne colonne fournisseur
+    const allColumns = board.columns || [];
+    let supplierColId = COL_SUPPLIER; // ta constante en haut du fichier
+    const exists = allColumns.some((c) => c.id === supplierColId);
+
+    if (!exists) {
+      supplierColId = guessSupplierCol(allColumns);
+    }
+
+    if (!supplierColId) {
+      setError("Impossible de trouver la colonne fournisseur.");
+      setDebug(
+        JSON.stringify(
+          {
+            hint: "Vérifie l’ID via Monday > menu colonne > Developer info > Copy column ID",
+            columns: allColumns,
+          },
+          null,
+          2
+        )
+      );
+      setLoading(false);
+      return;
+    }
+
+    // Aplatir items de tous les groupes
+    const rawItems = (board.groups || []).flatMap((g) => g.items || []);
+
+    // Normaliser: on lit la colonne fournisseur détectée
+    const normalized = rawItems.map((it) => {
+      const map = Object.fromEntries((it.column_values || []).map((cv) => [cv.id, cv.text]));
+      return {
+        id: it.id,
+        name: it.name,
+        supplier: map[supplierColId] || "",
+        // on garde tes 2 autres colonnes si tu veux les utiliser plus tard
+        product: map[COL_PRODUCT] || it.name,
+        qty: map[COL_QTY] || "",
+      };
+    });
+
+    setItems(normalized);
+
+    // Construire l’index fournisseurs -> nb de lignes
+    const idx = new Map();
+    for (const it of normalized) {
+      const name = (it.supplier || "").trim();
+      if (!name) continue;
+      idx.set(name, (idx.get(name) || 0) + 1);
+    }
+    const supplierIndex = [...idx]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+
+    setSupplierIndex(supplierIndex);
+    setSuppliers(supplierIndex.map((x) => x.name));
+
+    // Si rien trouvé, on t’affiche les colonnes en debug
+    if (supplierIndex.length === 0) {
+      setError("Aucun fournisseur détecté dans les items.");
+      setDebug(
+        JSON.stringify(
+          {
+            supplierColId,
+            sample: normalized.slice(0, 5),
+            columns: allColumns,
+          },
+          null,
+          2
+        )
+      );
+    }
+  } catch (e) {
+    setError("Erreur GraphQL : " + (e?.message || "inconnue"));
+    setDebug(e?.stack || String(e));
+  } finally {
+    setLoading(false);
   }
+}
 
   const supplierLines = useMemo(() => {
     if (!selectedSupplier) return [];
