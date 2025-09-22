@@ -8,44 +8,72 @@ export default function App() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
 
-  
-useEffect(() => {
-  const boardId = context?.boardId;
-  if (!boardId) return;
+  // 1) Récupère le contexte (boardId, itemId, etc.)
+  useEffect(() => {
+    monday
+      .get("context")
+      .then(({ data }) => {
+        setContext(data);
+        setError("");
+      })
+      .catch((err) => {
+        const msg = err?.message || err?.error_message || "Erreur inconnue";
+        setError("Erreur contexte: " + msg);
+      });
+  }, []);
 
-  const query = `
-    query ($boardId: ID!, $limit: Int!) {
-      items_page_by_board(board_id: $boardId, limit: $limit) {
-        cursor
-        items { id name }
-      }
-    }
-  `;
-
-  monday
-    .api(query, { variables: { boardId: String(boardId), limit: 50 } })
-    .then((res) => {
-      if (res?.errors?.length) {
-        const msg = res.errors.map(e => e?.message).filter(Boolean).join(" | ");
-        setError("Erreur API Monday: " + (msg || "GraphQL error"));
-        setItems([]);
-        return;
-      }
-      const list = res?.data?.items_page_by_board?.items ?? [];
-      setItems(list);
-      setError("");
-    })
-    .catch((err) => {
-      const msg =
-        err?.error_message || err?.message ||
-        (Array.isArray(err?.errors) && err.errors.map(e => e?.message).join(" | ")) ||
-        "Erreur inconnue";
-      setError("Erreur API Monday: " + msg);
+  // 2) Quand on a le boardId, on charge quelques items via GraphQL
+  useEffect(() => {
+    const boardId = context?.boardId;
+    if (!boardId) {
       setItems([]);
-    });
-}, [context]);
+      setError("");
+      return;
+    }
 
+    let isActive = true;
 
+    const query = `
+      query ($boardId: ID!, $limit: Int!) {
+        items_page_by_board(board_id: $boardId, limit: $limit) {
+          cursor
+          items { id name }
+        }
+      }
+    `;
+
+    monday
+      .api(query, { variables: { boardId: String(boardId), limit: 50 } })
+      .then((res) => {
+        if (!isActive) return;
+
+        if (res?.errors?.length) {
+          const msg = res.errors.map((e) => e?.message).filter(Boolean).join(" | ");
+          setError("Erreur API Monday: " + (msg || "GraphQL error"));
+          setItems([]);
+          return;
+        }
+
+        const list = res?.data?.items_page_by_board?.items ?? [];
+        setItems(list);
+        setError("");
+      })
+      .catch((err) => {
+        if (!isActive) return;
+
+        const msg =
+          err?.error_message ||
+          err?.message ||
+          (Array.isArray(err?.errors) && err.errors.map((e) => e?.message).join(" | ")) ||
+          "Erreur inconnue";
+        setError("Erreur API Monday: " + msg);
+        setItems([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [context?.boardId]);
 
 
   return (
