@@ -11,6 +11,8 @@ const COL_PRODUCT  = "texte2";              // Description produit
 const COL_QTY      = "quantit__produit";    // Quantité produit
 
 export default function App() {
+  const [supplierIndex, setSupplierIndex] = useState([]); // [{name,count}]
+  const [supplierQuery, setSupplierQuery] = useState("");
   const [showStockModal, setShowStockModal]     = useState(false);
   const [loading, setLoading]                   = useState(false);
   const [error, setError]                       = useState("");
@@ -106,6 +108,22 @@ export default function App() {
 
       setItems(normalized);
 
+      // construit l'index fournisseurs -> nb de lignes
+      const idx = new Map();
+      for (const it of normalized) {
+        const name = (it.supplier || "").trim();
+        if (!name) continue;
+        idx.set(name, (idx.get(name) || 0) + 1);
+      }
+
+      const index = [...idx]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+
+      setSupplierIndex(index);
+      // garde aussi l’ancienne liste simple si tu en as besoin ailleurs
+      setSuppliers(index.map(x => x.name));
+
       const uniq = [...new Set(normalized.map(x => x.supplier).filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
       setSuppliers(uniq);
@@ -164,24 +182,38 @@ export default function App() {
                 <h2 style={{marginTop:0}}>📦 Sélectionne un fournisseur</h2>
                 {loading && <p>Chargement…</p>}
 
-                {!loading && suppliers.length === 0 && (
-                  <p>Aucun fournisseur trouvé dans “ENTRÉES DE STOCK”.</p>
+                {!loading && supplierIndex.length === 0 && (
+                  <p>Aucun fournisseur trouvé dans “ENTRÉES DE STOCK”. Vérifie COL_SUPPLIER.</p>
                 )}
 
-                {!loading && suppliers.length > 0 && (
-                  <div className="ga-supplier-list">
-                    {suppliers.map((s) => (
-                      <button
-                        key={s}
-                        className="ga-card pastel-grey"
-                        onClick={() => setSelectedSupplier(s)}
-                        title={`Voir les lignes pour ${s}`}
-                      >
-                        <div className="ga-icon">🏷️</div>
-                        <div className="ga-label">{s}</div>
-                      </button>
-                    ))}
-                  </div>
+                {!loading && supplierIndex.length > 0 && (
+                  <>
+                    <input
+                      className="ga-input"
+                      placeholder="Rechercher un fournisseur…"
+                      value={supplierQuery}
+                      onChange={e => setSupplierQuery(e.target.value)}
+                    />
+                    <div className="ga-supplier-list">
+                      {supplierIndex
+                        .filter(s => s.name.toLowerCase().includes(supplierQuery.toLowerCase()))
+                        .map((s) => (
+                          <button
+                            key={s.name}
+                            className="ga-card pastel-grey"
+                            onClick={() => setSelectedSupplier(s.name)}
+                            title={`Voir les lignes pour ${s.name}`}
+                            style={{justifyContent:"space-between"}}
+                          >
+                            <div style={{display:"flex", alignItems:"center", gap:12}}>
+                              <div className="ga-icon">🏷️</div>
+                              <div className="ga-label">{s.name}</div>
+                            </div>
+                            <span className="ga-badge">{s.count}</span>
+                          </button>
+                        ))}
+                    </div>
+                  </>
                 )}
 
                 <div className="ga-modal-buttons">
@@ -190,6 +222,7 @@ export default function App() {
                   </button>
                 </div>
               </>
+
             ) : (
               <>
                 <h2 style={{marginTop:0}}>🧾 Lignes — {selectedSupplier}</h2>

@@ -119,3 +119,12 @@
     gap: 16px;
   }
 }
+.ga-input{
+  width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:10px;
+  margin:6px 0 10px; font-size:15px; background:#fff;
+}
+.ga-badge{
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:32px; height:28px; padding:0 8px;
+  border-radius:999px; background:#eee; font-size:13px; font-weight:700;
+}
