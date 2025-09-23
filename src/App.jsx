@@ -9,18 +9,18 @@ const monday = mondaySdk();
 /** ============================
  *  ===  PARAMÈTRES À RENSEIGNER ===
  *  ============================ */
-// === UN SEUL BOARD (Commandes + Stock) ===
+// Un seul et même board pour Commandes + Stock
 const BOARD_ID = 7678082330;
 const ORDER_BOARD_ID = BOARD_ID;
 const STOCK_BOARD_ID = BOARD_ID;
 
 // === GROUPES ===
-// Pour l'instant tu n'as que "Stock entrant" => id "topics"
-// (tu pourras créer un groupe "COMMANDES" plus tard et remplacer ORDER_GROUP_ID)
-const ORDER_GROUP_ID = "topics";
+// ⚠️ Option immédiate (un seul groupe) :
+const ORDER_GROUP_ID = "topics";      // tu n'as pour l’instant que "Stock entrant"
 const STOCK_GROUP_ID = "topics";
 
-// === COLONNES EXISTANTES (board ENTRÉES DE STOCK) ===
+
+// Colonnes ENTRÉES DE STOCK (déjà partagées)
 const COL_SUPPLIER   = "texte9";             // FOURNISSEUR (Text)
 const COL_PRODUCT    = "texte2";             // Description produit (Text)
 const COL_QTY        = "quantit__produit";   // Quantité produit (Numbers)
@@ -29,22 +29,21 @@ const COL_WIDTH      = "laize";              // Laize (mm) (Numbers)
 const COL_LENGTH     = "longueur__mm_";      // Longueur / Poids (Numbers)
 const COL_BATCH      = "batch_fournisseur2"; // Batch FOURNISSEUR (Text)
 const COL_DATE_IN    = "date1";              // Date entrée (Date)
-const COL_QR_VALUE   = "text_mkw2pzva";      // QR_VALUE (Text) ← confirmé
-const COL_QR_FILE    = "fichiers";           // (Files) si tu veux téléverser le PNG
+// Conseillé : ajoutez une colonne Texte pour stocker la valeur encodée du QR
+// Colonne texte qui stocke la valeur encodée du QR
+const COL_QR_VALUE = "text_mkw2pzva";
+// Optionnel : une colonne Fichier pour uploader le PNG du QR
+const COL_QR_FILE    = "fichiers";           // (Files) si vous souhaitez l’upload
 
-// === COLONNES "COMMANDES" (même board) ===
-// On réutilise ce qu'on a déjà pour fournisseur/produit/laize/unité.
-// Pour les quantités : on prend COL_QTY comme "Qté commandée" sur les lignes de commande.
-// Il te FAUT une colonne Numbers *Qté reçue* et une colonne Status *Statut réception*.
-// Mets ici leurs IDs quand tu les auras créées (voir plus bas).
-const ORDER_COL_SUPPLIER = COL_SUPPLIER;
-const ORDER_COL_PRODUCT  = COL_PRODUCT;
-const ORDER_COL_ORDERED  = COL_QTY;          // "Qté commandée" (Numbers)
-const ORDER_COL_RECEIVED = "numeric_mkw2h88x";               
-const ORDER_COL_STATUS   = "color_mkw2k1mz";               // <-- REMPLACE par l'ID de ta colonne Status "STATUT_RECEPTION"
-const ORDER_COL_WIDTH    = COL_WIDTH;
-const ORDER_COL_UNIT     = COL_UNIT;
-
+// --- BOARD COMMANDES (à adapter à votre board “Commandes/Fournisseurs”) ---
+const ORDER_BOARD_ID     = 1234567890; // TODO: Renseignez l’ID de votre board Commandes
+const ORDER_COL_SUPPLIER = "supplier"; // TODO: Colonne fournisseur (Text / Connect Board / Mirror -> texte)
+const ORDER_COL_PRODUCT  = "item_desc"; // TODO: Désignation (Text)
+const ORDER_COL_ORDERED  = "qty_cmd";   // TODO: Quantité commandée (Numbers)
+const ORDER_COL_RECEIVED = "qty_rcv";   // TODO: Quantité déjà réceptionnée (Numbers)
+const ORDER_COL_STATUS   = "status";    // TODO: Statut (Status) (ex. “Réception partielle” / “Réception OK”)
+const ORDER_COL_WIDTH    = "laize";     // TODO: Laize (Numbers) si présente sur la ligne de commande
+const ORDER_COL_UNIT     = "unit";      // TODO: Unité (Text) ex. “ML”
 
 /** ============================
  *  ===  HELPERS / UTILITAIRES ===
@@ -274,34 +273,29 @@ async function updateOrderLineAfterReceipt({
   const newReceived = fmt2n(Number(alreadyReceivedQty || 0) + Number(addedReceivedQty || 0));
   const remaining   = fmt2n(Number(orderedQty || 0) - newReceived);
 
-  // maj quantité reçue (si la colonne est renseignée)
-  if (ORDER_COL_RECEIVED) {
-    await monday.api(MUT_CHANGE_COL_VAL, {
-      variables: {
-        boardId: ORDER_BOARD_ID,
-        itemId: Number(orderItemId),
-        columnId: ORDER_COL_RECEIVED,
-        value: JSON.stringify(fmt2s(newReceived)),
-      },
-    });
-  }
+  // maj quantité reçue
+  await monday.api(MUT_CHANGE_COL_VAL, {
+    variables: {
+      boardId: ORDER_BOARD_ID,
+      itemId: Number(orderItemId),
+      columnId: ORDER_COL_RECEIVED,
+      value: JSON.stringify(fmt2s(newReceived)),
+    },
+  });
 
-  // statut (si la colonne est renseignée)
-  if (ORDER_COL_STATUS) {
-    const status = remaining <= 0 ? { label: "Réception OK" } : { label: "Réception partielle" };
-    await monday.api(MUT_CHANGE_COL_VAL, {
-      variables: {
-        boardId: ORDER_BOARD_ID,
-        itemId: Number(orderItemId),
-        columnId: ORDER_COL_STATUS,
-        value: JSON.stringify(status),
-      },
-    });
-  }
+  // statut
+  const status = remaining <= 0 ? { label: "Réception OK" } : { label: "Réception partielle" };
+  await monday.api(MUT_CHANGE_COL_VAL, {
+    variables: {
+      boardId: ORDER_BOARD_ID,
+      itemId: Number(orderItemId),
+      columnId: ORDER_COL_STATUS,
+      value: JSON.stringify(status),
+    },
+  });
 
   return { newReceived, remaining };
 }
-
 
 /** ============================
  *  ===  UI: DIALOG RÉCEPTION ===
