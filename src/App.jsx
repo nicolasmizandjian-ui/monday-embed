@@ -38,130 +38,66 @@ export default function App() {
   }
 
   // ---------- Chargement "Entrées de stock" : items_page => fallback groups/items ----------
-  async function openStockModal() {
-    setShowStockModal(true);
-    setSelectedSupplier("");
-    setLoading(true);
-    setError("");
+async function openStockModal() {
+  setShowStockModal(true);
+  setSelectedSupplier("");
+  setLoading(true);
+  setError("");
 
-    const LIMIT = 500;
-    const cols = [COL_SUPPLIER, COL_PRODUCT, COL_QTY];
+  const LIMIT = 200;
+  const cols = [COL_SUPPLIER, COL_PRODUCT, COL_QTY];
 
-    // helpers de requêtes
-    const Q_ITEMS_PAGE_ID = `
-      query ($id: ID!, $limit: Int!, $cols: [String!]) {
-        boards(ids: [$id]) {
-          items_page(limit: $limit) {
-            items {
-              id name
-              column_values(ids: $cols){ id text }
-            }
+  // === même forme que ta requête B qui marche dans le Playground ===
+  const q = `
+    query ($boardId: ID!, $limit: Int!, $cols: [String!]) {
+      boards(ids: [$boardId]) {
+        items_page(limit: $limit) {
+          items {
+            id
+            name
+            column_values(ids: $cols) { id text }
           }
+          cursor
         }
-      }`;
-    const Q_ITEMS_PAGE_INT = `
-      query ($id: Int!, $limit: Int!, $cols: [String!]) {
-        boards(ids: [$id]) {
-          items_page(limit: $limit) {
-            items {
-              id name
-              column_values(ids: $cols){ id text }
-            }
-          }
-        }
-      }`;
-    const Q_GROUPS_ID = `
-      query ($id: ID!, $limit: Int!, $cols: [String!]) {
-        boards(ids: [$id]) {
-          groups {
-            items(limit: $limit) {
-              id name
-              column_values(ids: $cols){ id text }
-            }
-          }
-        }
-      }`;
-    const Q_GROUPS_INT = `
-      query ($id: Int!, $limit: Int!, $cols: [String!]) {
-        boards(ids: [$id]) {
-          groups {
-            items(limit: $limit) {
-              id name
-              column_values(ids: $cols){ id text }
-            }
-          }
-        }
-      }`;
-
-    try {
-      // 1) tenter items_page (ID → Int)
-      let res = await monday.api(Q_ITEMS_PAGE_ID,  { variables: { id: String(BOARD_ID), limit: LIMIT, cols } });
-      if (res?.errors?.length) {
-        res = await monday.api(Q_ITEMS_PAGE_INT, { variables: { id: Number(BOARD_ID), limit: LIMIT, cols } });
       }
-
-      // 2) fallback groups/items si items_page non dispo
-      let raw = [];
-      if (!res?.errors?.length) {
-        raw = res?.data?.boards?.[0]?.items_page?.items || [];
-      } else {
-        let r2 = await monday.api(Q_GROUPS_ID,  { variables: { id: String(BOARD_ID), limit: LIMIT, cols } });
-        if (r2?.errors?.length) {
-          r2 = await monday.api(Q_GROUPS_INT, { variables: { id: Number(BOARD_ID), limit: LIMIT, cols } });
-        }
-        if (r2?.errors?.length) {
-          const msg = (r2.errors || res.errors).map(e => e?.message).join(" | ");
-          throw new Error(msg || "GraphQL validation errors");
-        }
-        raw = (r2?.data?.boards?.[0]?.groups || []).flatMap(g => g?.items || []);
-      }
-
-      // normalisation
-      const normalized = (raw || []).map((it) => {
-        const byId = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
-        return {
-          id: it.id,
-          name: it.name,
-          supplier: byId[COL_SUPPLIER] || "",
-          product:  byId[COL_PRODUCT]  || it.name,
-          qty:      byId[COL_QTY]      || "",
-        };
-      });
-
-      setItems(normalized);
-
-    // Construire l’index fournisseurs -> nb de lignes
-    const idx = new Map();
-    for (const it of normalized) {
-      const name = (it.supplier || "").trim();
-      if (!name) continue;
-      idx.set(name, (idx.get(name) || 0) + 1);
     }
-    const supplierIndex = [...idx]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "fr", { sensitivity: "base" }));
+  `;
 
-    setSupplierIndex(supplierIndex);
-    setSuppliers(supplierIndex.map((x) => x.name));
+  try {
+    const res = await monday.api(q, {
+      variables: { boardId: String(BOARD_ID), limit: LIMIT, cols }
+    });
 
-    // Si rien trouvé, on t’affiche les colonnes en debug
-    if (supplierIndex.length === 0) {
-      setError("Aucun fournisseur détecté dans les items.");
-      setDebug(
-        JSON.stringify(
-          {
-            supplierColId,
-            sample: normalized.slice(0, 5),
-            columns: allColumns,
-          },
-          null,
-          2
-        )
-      );
+    if (res?.errors?.length) {
+      throw new Error(res.errors.map(e => e.message).join(" | "));
+    }
+
+    const raw = res?.data?.boards?.[0]?.items_page?.items ?? [];
+
+    // normalisation
+    const normalized = raw.map(it => {
+      const map = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
+      return {
+        id: it.id,
+        name: it.name,
+        supplier: (map[COL_SUPPLIER] || "").trim(),
+        product:  map[COL_PRODUCT]  || it.name,
+        qty:      map[COL_QTY]      || "",
+      };
+    });
+
+    setItems(normalized);
+
+    // fournisseurs uniques triés
+    const uniq = [...new Set(normalized.map(x => x.supplier).filter(Boolean))]
+      .sort((a,b)=>a.localeCompare(b,"fr",{sensitivity:"base"}));
+    setSuppliers(uniq);
+
+    if (!uniq.length) {
+      setError("Aucun fournisseur trouvé dans FOURNISSEUR (texte9) sur ce board.");
     }
   } catch (e) {
-    setError("Erreur GraphQL : " + (e?.message || "inconnue"));
-    setDebug(e?.stack || String(e));
+    setError("Erreur GraphQL (items_page) : " + (e?.message || "inconnue"));
   } finally {
     setLoading(false);
   }
