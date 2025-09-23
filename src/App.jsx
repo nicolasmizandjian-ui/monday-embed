@@ -22,6 +22,8 @@ export default function App() {
   const [items, setItems]                 = useState([]);          // [{id,name,supplier,product,qty}]
   const [suppliers, setSuppliers]         = useState([]);          // ["F1","F2",...]
   const [selectedSupplier, setSelectedSupplier] = useState("");
+  const [supplierCounts, setSupplierCounts] = useState({});
+  const [supplierQuery, setSupplierQuery] = useState("");
 
   const actions = [
     { key: "decoupe",    label: "Lancer une découpe",            color: "pastel-green",  icon: "✂️" },
@@ -146,21 +148,37 @@ async function openStockModal() {
                 {!loading && suppliers.length === 0 && (
                   <p>Aucun fournisseur trouvé dans “ENTRÉES DE STOCK”.</p>
                 )}
-                {!loading && suppliers.length > 0 && (
-                  <div style={{display:"grid", gap:10}}>
-                    {suppliers.map(s => (
-                      <button
-                        key={s}
-                        className="ga-card pastel-grey"
-                        onClick={()=>setSelectedSupplier(s)}
-                        title={`Voir les lignes pour ${s}`}
-                      >
-                        <div className="ga-icon">🏷️</div>
-                        <div className="ga-label">{s}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+               {!loading && suppliers.length > 0 && (
+                    <>
+                      <input
+                        className="ga-input"
+                        placeholder="Rechercher un fournisseur…"
+                        value={supplierQuery}
+                        onChange={(e) => setSupplierQuery(e.target.value)}
+                        style={{marginBottom:12}}
+                      />
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {suppliers
+                          .filter(s => s.toLowerCase().includes(supplierQuery.toLowerCase()))
+                          .map((s) => (
+                            <button
+                              key={s}
+                              className="ga-card pastel-grey"
+                              onClick={() => setSelectedSupplier(s)}
+                              title={`Voir les lignes pour ${s}`}
+                              style={{ justifyContent: "space-between" }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                                <div className="ga-icon">🏷️</div>
+                                <div className="ga-label">{s}</div>
+                              </div>
+                              <span className="ga-badge">{supplierCounts[s] || 0}</span>
+                            </button>
+                          ))}
+                      </div>
+                    </>
+                  )}
+
                 <div className="ga-modal-buttons" style={{marginTop:12}}>
                   <button className="ga-btn ghost" onClick={()=>setShowStockModal(false)}>Annuler</button>
                 </div>
