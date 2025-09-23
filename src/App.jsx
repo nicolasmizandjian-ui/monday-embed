@@ -9,16 +9,10 @@ const monday = mondaySdk();
 /** ============================
  *  ===  PARAMÈTRES À RENSEIGNER ===
  *  ============================ */
-// Un seul et même board pour Commandes + Stock
-const BOARD_ID = 7678082330;
-const ORDER_BOARD_ID = BOARD_ID;
-const STOCK_BOARD_ID = BOARD_ID;
 
-// === GROUPES ===
-// ⚠️ Option immédiate (un seul groupe) :
-const ORDER_GROUP_ID = "topics";      // tu n'as pour l’instant que "Stock entrant"
-const STOCK_GROUP_ID = "topics";
-
+// --- BOARD STOCK (ENTRÉES DE STOCK) — vous les avez déjà ---
+const STOCK_BOARD_ID = 7678082330;     // ENTRÉES DE STOCK
+const STOCK_GROUP_ID = "topics";        // ⚠️ adaptez si besoin
 
 // Colonnes ENTRÉES DE STOCK (déjà partagées)
 const COL_SUPPLIER   = "texte9";             // FOURNISSEUR (Text)
@@ -30,8 +24,7 @@ const COL_LENGTH     = "longueur__mm_";      // Longueur / Poids (Numbers)
 const COL_BATCH      = "batch_fournisseur2"; // Batch FOURNISSEUR (Text)
 const COL_DATE_IN    = "date1";              // Date entrée (Date)
 // Conseillé : ajoutez une colonne Texte pour stocker la valeur encodée du QR
-// Colonne texte qui stocke la valeur encodée du QR
-const COL_QR_VALUE = "text_mkw2pzva";
+const COL_QR_VALUE   = "qr_value";           // (Text) créez-la et mettez l’ID
 // Optionnel : une colonne Fichier pour uploader le PNG du QR
 const COL_QR_FILE    = "fichiers";           // (Files) si vous souhaitez l’upload
 
