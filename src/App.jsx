@@ -67,9 +67,9 @@ export default function App() {
     setError("");
 
     const q = `
-      query ($boardId: ID!, $limit: Int!, $cols: [String!]) {
+      query ($boardId: ID!, $limit: Int!, $cols: [String!], $cursor: String) {
         boards(ids: [$boardId]) {
-          items_page(limit: $limit) {
+          items_page(limit: $limit, cursor: $cursor) {
             items {
               id
               name
@@ -82,16 +82,25 @@ export default function App() {
     `;
 
     try {
-      const res = await monday.api(q, {
-        variables: {
+            let cursor = null;
+      let raw = [];
+
+      do {
+        const variables = {
           boardId: String(BOARD_ID),
           limit: 200,
           cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY],
-        },
-      });
-      if (res?.errors?.length) throw new Error(res.errors.map(e => e.message).join(" | "));
+   };
+        if (cursor) variables.cursor = cursor;
 
-      const raw = res?.data?.boards?.[0]?.items_page?.items ?? [];
+        const res = await monday.api(q, { variables });
+        if (res?.errors?.length) throw new Error(res.errors.map(e => e.message).join(" | "));
+
+        const page = res?.data?.boards?.[0]?.items_page;
+        const pageItems = page?.items ?? [];
+        raw = raw.concat(pageItems);
+        cursor = page?.cursor ?? null;
+      } while (cursor);
 
       // Normalisation + formats
       const normalized = raw.map((it) => {
