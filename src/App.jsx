@@ -3,10 +3,8 @@
 function stripHtml(html) {
   if (!html) return "";
   const div = document.createElement("div");
-  div.innerHTML = html;                            // décode & supprime <br>, <strong>, etc.
-  return (div.textContent || div.innerText || "")
-    .replace(/\s+/g, " ")                          // espaces propres
-    .trim();
+  div.innerHTML = html;
+  return (div.textContent || div.innerText || "").replace(/\s+/g, " ").trim();
 }
 
 function formatQty(q) {
@@ -104,7 +102,7 @@ async function openStockModal() {
             name: it.name,
             supplier: (map[COL_SUPPLIER] || "").trim(),
             product:  stripHtml(map[COL_PRODUCT] || it.name),   // ⬅️ nettoyé
-            qty:      map[COL_QTY] || "",                       // on garde brut; on formate à l'affichage
+            qtyDisplay: formatQty(map[COL_QTY] || ""),                      // on garde brut; on formate à l'affichage
           };
         });
 
@@ -218,7 +216,7 @@ async function openStockModal() {
                         <div style={{display:"grid"}}>
                           <div className="ga-label">{stripHtml(ln.product) || "(Sans description)"}</div>
                             <div style={{ fontSize: 14, opacity: .85 }}>
-                              Qté prévue : {formatQty(ln.qty)} &nbsp;•&nbsp; Item #{ln.id}
+                              Qté prévue : {ln.qtyDisplay} · Item #{ln.id}
                             </div>
                         </div>
                       </div>
