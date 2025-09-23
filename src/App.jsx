@@ -42,7 +42,7 @@ export default function App() {
   const [supplierCounts, setSupplierCounts] = useState({}); // { Fournisseur: nb }
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [supplierQuery, setSupplierQuery] = useState("");
-  
+
   // Boutons
   const actions = [
     { key: "decoupe",    label: "Lancer une découpe",          color: "pastel-green",  icon: "✂️" },
@@ -57,6 +57,7 @@ export default function App() {
     if (a.key === "stock_in") openStockModal();
     else alert(`🛠️ Bientôt : ${a.label}`);
   }
+
   // ---------- Chargement via boards -> items_page (ta requête B) ----------
   async function openStockModal() {
     setShowStockModal(true);
