@@ -42,10 +42,7 @@ export default function App() {
   const [supplierCounts, setSupplierCounts] = useState({}); // { Fournisseur: nb }
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [supplierQuery, setSupplierQuery] = useState("");
-  const [selected, setSelected] = useState({});       // { [itemId]: true }
-  const [receivedForm, setReceivedForm] = useState({});// { [itemId]: "12.5" }
-  const [saving, setSaving] = useState(false);
-
+  
   // Boutons
   const actions = [
     { key: "decoupe",    label: "Lancer une découpe",          color: "pastel-green",  icon: "✂️" },
@@ -60,18 +57,6 @@ export default function App() {
     if (a.key === "stock_in") openStockModal();
     else alert(`🛠️ Bientôt : ${a.label}`);
   }
-  function toggleSelect(id) {
-    setSelected(prev => ({ ...prev, [id]: !prev[id] }));
-  }
-  function setReceived(id, val) {
-    setReceivedForm(prev => ({ ...prev, [id]: val }));
-  }
-  function getOrderedQty(line) {
-    // on a déjà qtyDisplay; ici on relit la version brute si besoin
-    return line.qtyDisplay;
-  }
-
-
   // ---------- Chargement via boards -> items_page (ta requête B) ----------
   async function openStockModal() {
     setShowStockModal(true);
@@ -144,40 +129,6 @@ export default function App() {
     () => (selectedSupplier ? items.filter(it => it.supplier === selectedSupplier) : []),
     [items, selectedSupplier]
   );
-
-  async function confirmReception() {
-  const picked = supplierLines.filter(ln => selected[ln.id]);
-  if (!picked.length) {
-    alert("Sélectionne au moins une ligne.");
-    return;
-  }
-
-  // Prépare les données saisies
-  const payload = picked.map(ln => {
-    const rec = receivedForm[ln.id];
-    const received = rec ? parseFloat(String(rec).replace(",", ".")) : 0;
-    return {
-      itemId: ln.id,
-      product: ln.product,
-      orderedQty: ln.qtyDisplay,
-      receivedQty: received,
-    };
-  });
-
-  // Validation légère
-  const missing = payload.filter(p => !(p.receivedQty > 0));
-  if (missing.length) {
-    alert("Renseigne une quantité reçue (>0) pour chaque ligne sélectionnée.");
-    return;
-  }
-
-  // 👉 Ici on fera les mutations Monday :
-  // - soit création/MAJ colonnes QTE_RECUE & QTE_RESTE + date entrée stock (date1)
-  // - soit on passe à l’étape “Créer rouleaux” après validation
-  // Pour l’instant, on affiche un récap (debug) :
-  console.table(payload);
-  alert(`OK, ${payload.length} ligne(s) prêtes pour la réception.\n(Je branche les mutations dès que tu me confirmes les colonnes / option rouleaux.)`);
-}
 
   return (
     <div className="ga-wrapper">
@@ -255,56 +206,32 @@ export default function App() {
               <>
                 <h2 style={{ marginTop: 0 }}>🧾 Lignes — {selectedSupplier}</h2>
 
-                {supplierLines.map((ln) => (
-                  <div key={ln.id} className="ga-card pastel-grey" style={{ cursor: "default" }}>
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!selected[ln.id]}
-                            onChange={() => toggleSelect(ln.id)}
-                          />
-                          <span className="ga-label">{ln.product || "(Sans description)"}</span>
-                        </label>
-
-                        <div style={{ fontSize: 14, opacity: 0.85 }}>
-                          Cmd : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
+                {supplierLines.length === 0 ? (
+                  <p>Aucune ligne pour ce fournisseur.</p>
+                ) : (
+                  <div style={{ maxHeight: 380, overflow: "auto", display: "grid", gap: 10 }}>
+                    {supplierLines.map((ln) => (
+                      <div key={ln.id} className="ga-card pastel-grey" style={{ cursor: "default" }}>
+                        <div className="ga-icon">📦</div>
+                        <div style={{ display: "grid" }}>
+                          <div className="ga-label">{ln.product || "(Sans description)"}</div>
+                          <div style={{ fontSize: 14, opacity: 0.85 }}>
+                            Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
+                          </div>
                         </div>
                       </div>
-
-                      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span>Qté reçue</span>
-                          <input
-                            className="ga-input"
-                            style={{ width: 120 }}
-                            inputMode="decimal"
-                            placeholder="ex: 10"
-                            value={receivedForm[ln.id] ?? ""}
-                            onChange={(e) => setReceived(ln.id, e.target.value)}
-                          />
-                        </label>
-
-                        {/* Placeholders pour la suite (laize, unité, etc.) */}
-                        {/* <label>Laize …</label> <label>Unité …</label> */}
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
 
-
-                    <div className="ga-modal-buttons" style={{ marginTop: 12 }}>
-                      <button className="ga-btn ghost" onClick={() => setSelectedSupplier("")}>
-                        ⬅︎ Retour fournisseurs
-                      </button>
-                      <button className="ga-btn" disabled={saving} onClick={confirmReception}>
-                        {saving ? "Enregistrement…" : "Confirmer la réception"}
-                      </button>
-                      <button className="ga-btn ghost" onClick={() => setShowStockModal(false)}>
-                        Fermer
-                      </button>
-                    </div>
+                <div className="ga-modal-buttons" style={{ marginTop: 12 }}>
+                  <button className="ga-btn ghost" onClick={() => setSelectedSupplier("")}>
+                    ⬅︎ Retour fournisseurs
+                  </button>
+                  <button className="ga-btn ghost" onClick={() => setShowStockModal(false)}>
+                    Fermer
+                  </button>
+                </div>
               </>
             )}
           </div>
