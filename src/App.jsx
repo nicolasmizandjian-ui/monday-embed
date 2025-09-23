@@ -1,4 +1,24 @@
 // src/App.jsx
+
+function stripHtml(html) {
+  if (!html) return "";
+  const div = document.createElement("div");
+  div.innerHTML = html;                            // décode & supprime <br>, <strong>, etc.
+  return (div.textContent || div.innerText || "")
+    .replace(/\s+/g, " ")                          // espaces propres
+    .trim();
+}
+
+function formatQty(q) {
+  // accepte "1500.0000000000", "1 234,56", etc.
+  const n = parseFloat(String(q).replace(/\s/g, "").replace(",", "."));
+  if (Number.isNaN(n)) return q || "—";
+  return new Intl.NumberFormat("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
 import React, { useMemo, useState } from "react";
 import "./App.css";
 import mondaySdk from "monday-sdk-js";
@@ -77,16 +97,16 @@ async function openStockModal() {
     const raw = res?.data?.boards?.[0]?.items_page?.items ?? [];
 
     // normalisation
-    const normalized = raw.map(it => {
-      const map = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
-      return {
-        id: it.id,
-        name: it.name,
-        supplier: (map[COL_SUPPLIER] || "").trim(),
-        product:  map[COL_PRODUCT]  || it.name,
-        qty:      map[COL_QTY]      || "",
-      };
-    });
+        const normalized = raw.map((it) => {
+          const map = Object.fromEntries((it.column_values || []).map((cv) => [cv.id, cv.text]));
+          return {
+            id: it.id,
+            name: it.name,
+            supplier: (map[COL_SUPPLIER] || "").trim(),
+            product:  stripHtml(map[COL_PRODUCT] || it.name),   // ⬅️ nettoyé
+            qty:      map[COL_QTY] || "",                       // on garde brut; on formate à l'affichage
+          };
+        });
 
     setItems(normalized);
 
@@ -196,10 +216,10 @@ async function openStockModal() {
                       <div key={ln.id} className="ga-card pastel-grey" style={{cursor:"default"}}>
                         <div className="ga-icon">📦</div>
                         <div style={{display:"grid"}}>
-                          <div className="ga-label">{ln.product || "(Sans description)"}</div>
-                          <div style={{fontSize:14, opacity:.85}}>
-                            Qté prévue : {ln.qty || "—"} • Item #{ln.id}
-                          </div>
+                          <div className="ga-label">{stripHtml(ln.product) || "(Sans description)"}</div>
+                            <div style={{ fontSize: 14, opacity: .85 }}>
+                              Qté prévue : {formatQty(ln.qty)} &nbsp;•&nbsp; Item #{ln.id}
+                            </div>
                         </div>
                       </div>
                     ))}
