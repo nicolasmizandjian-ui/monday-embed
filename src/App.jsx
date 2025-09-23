@@ -6,15 +6,22 @@ import dayjs from "dayjs";
 
 const monday = mondaySdk();
 
-/** ============================
- *  ===  PARAMÈTRES À RENSEIGNER ===
- *  ============================ */
+/* =========================
+   CONFIG — UN SEUL BOARD
+   ========================= */
+const BOARD_ID = 7678082330;     // ENTRÉES DE STOCK
+const ORDER_BOARD_ID = BOARD_ID; // Commandes = même board
+const STOCK_BOARD_ID = BOARD_ID; // Stock (rouleaux) = même board
 
-// --- BOARD STOCK (ENTRÉES DE STOCK) — vous les avez déjà ---
-const STOCK_BOARD_ID = 7678082330;     // ENTRÉES DE STOCK
-const STOCK_GROUP_ID = "topics";        // ⚠️ adaptez si besoin
+// Groupes — pour l’instant tu n’as que "Stock entrant" (id "topics")
+// Tu pourras créer un groupe "COMMANDES" plus tard, et mettre son id ci-dessous.
+const ORDER_GROUP_ID = "topics";
+const STOCK_GROUP_ID = "topics";
 
-// Colonnes ENTRÉES DE STOCK (déjà partagées)
+/* =========================
+   COLONNES (IDs réels)
+   ========================= */
+// Colonnes générales du board (déjà en place chez toi)
 const COL_SUPPLIER   = "texte9";             // FOURNISSEUR (Text)
 const COL_PRODUCT    = "texte2";             // Description produit (Text)
 const COL_QTY        = "quantit__produit";   // Quantité produit (Numbers)
@@ -23,27 +30,23 @@ const COL_WIDTH      = "laize";              // Laize (mm) (Numbers)
 const COL_LENGTH     = "longueur__mm_";      // Longueur / Poids (Numbers)
 const COL_BATCH      = "batch_fournisseur2"; // Batch FOURNISSEUR (Text)
 const COL_DATE_IN    = "date1";              // Date entrée (Date)
-// Conseillé : ajoutez une colonne Texte pour stocker la valeur encodée du QR
-const COL_QR_VALUE   = "qr_value";           // (Text) créez-la et mettez l’ID
-// Optionnel : une colonne Fichier pour uploader le PNG du QR
-const COL_QR_FILE    = "fichiers";           // (Files) si vous souhaitez l’upload
+const COL_QR_VALUE   = "text_mkw2pzva";      // QR_VALUE (Text)
+const COL_QR_FILE    = "fichiers";           // (Files) si tu souhaites upload le PNG (optionnel)
 
-// --- BOARD COMMANDES (à adapter à votre board “Commandes/Fournisseurs”) ---
-const ORDER_BOARD_ID     = 1234567890; // TODO: Renseignez l’ID de votre board Commandes
-const ORDER_COL_SUPPLIER = "supplier"; // TODO: Colonne fournisseur (Text / Connect Board / Mirror -> texte)
-const ORDER_COL_PRODUCT  = "item_desc"; // TODO: Désignation (Text)
-const ORDER_COL_ORDERED  = "qty_cmd";   // TODO: Quantité commandée (Numbers)
-const ORDER_COL_RECEIVED = "qty_rcv";   // TODO: Quantité déjà réceptionnée (Numbers)
-const ORDER_COL_STATUS   = "status";    // TODO: Statut (Status) (ex. “Réception partielle” / “Réception OK”)
-const ORDER_COL_WIDTH    = "laize";     // TODO: Laize (Numbers) si présente sur la ligne de commande
-const ORDER_COL_UNIT     = "unit";      // TODO: Unité (Text) ex. “ML”
+// Colonnes “suivi commande” (même board). Si tu ne les as pas encore, laisse vide.
+const ORDER_COL_SUPPLIER = COL_SUPPLIER;
+const ORDER_COL_PRODUCT  = COL_PRODUCT;
+const ORDER_COL_ORDERED  = COL_QTY;  // on réutilise la même colonne pour "qté commandée"
+const ORDER_COL_RECEIVED = "";       // ← mets ici l'ID de ta colonne Numbers "QTE_RECUE" (si/qd créée)
+const ORDER_COL_STATUS   = "";       // ← mets ici l'ID de ta colonne Status "STATUT_RECEPTION" (si/qd créée)
+const ORDER_COL_WIDTH    = COL_WIDTH;
+const ORDER_COL_UNIT     = COL_UNIT;
 
-/** ============================
- *  ===  HELPERS / UTILITAIRES ===
- *  ============================ */
-
+/* =========================
+   HELPERS
+   ========================= */
 const fmt2n = (x) => Math.round((Number(x) + Number.EPSILON) * 100) / 100;
-const fmt2s = (x) => fmt2n(x).toFixed(2); // string “2 décimales” pour colonnes Numbers
+const fmt2s = (x) => fmt2n(x).toFixed(2);
 
 const makeRollCode = ({ dateISO, orderId, rollIndex }) => {
   const d = dayjs(dateISO).format("YYYYMMDD");
@@ -69,9 +72,24 @@ async function dataUrlToFile(dataUrl, filename) {
   return new File([blob], filename, { type: "image/png" });
 }
 
-/** ============================
- *  ===  GRAPHQL QUERIES/MUTATIONS ===
- *  ============================ */
+/* =========================
+   GQL
+   ========================= */
+const QRY_ORDER_ITEMS_PAGE = `
+  query($boardId: [Int], $limit: Int!, $cursor: String) {
+    boards(ids: $boardId) {
+      items_page(limit: $limit, cursor: $cursor) {
+        cursor
+        items {
+          id
+          name
+          group { id title }
+          column_values { id text value }
+        }
+      }
+    }
+  }
+`;
 
 const MUT_CREATE_ITEM = `
   mutation($boardId: Int!, $groupId: String!, $itemName: String!, $columnValues: JSON!) {
@@ -97,60 +115,40 @@ const MUT_ADD_FILE_TO_COL = `
   }
 `;
 
-const QRY_ORDER_ITEMS_PAGE = `
-  query($boardId: [Int], $limit: Int!, $cursor: String) {
-    boards(ids: $boardId) {
-      items_page(limit: $limit, cursor: $cursor) {
-        cursor
-        items {
-          id
-          name
-          column_values {
-            id
-            text
-            value
-          }
-        }
-      }
-    }
-  }
-`;
-
-/** ============================
- *  ===  SERVICES MONDAY ===
- *  ============================ */
-
-// Récupération *simple* (client-side filtering) des lignes de commande.
-// Vous avez déjà une liste opérationnelle : vous pouvez garder la vôtre
-// et simplement nourrir "PendingLines" avec vos données.
-// Ici, on montre un exemple générique à adapter (IDs ci-dessus).
-async function fetchOrderLinesAll() {
+/* =========================
+   SERVICES
+   ========================= */
+async function fetchOrderLinesFromGroup(boardId, groupId) {
   const out = [];
   let cursor = null;
   do {
     const res = await monday.api(QRY_ORDER_ITEMS_PAGE, {
-      variables: { boardId: [ORDER_BOARD_ID], limit: 200, cursor },
+      variables: { boardId: [boardId], limit: 200, cursor },
     });
     const page = res?.data?.boards?.[0]?.items_page;
     const items = page?.items || [];
-    items.forEach((it) => out.push(it));
+    items.forEach((it) => {
+      if (it?.group?.id === groupId) out.push(it);
+    });
     cursor = page?.cursor || null;
   } while (cursor);
   return out;
 }
 
-// Mapping item Monday -> structure "orderLine" utilisée par le dialog
 function mapOrderItemToOrderLine(item) {
   const byId = {};
-  item.column_values.forEach((cv) => (byId[cv.id] = cv));
+  (item.column_values || []).forEach((cv) => (byId[cv.id] = cv));
 
   const supplier = byId[ORDER_COL_SUPPLIER]?.text || "";
   const product  = byId[ORDER_COL_PRODUCT]?.text || item.name || "";
-  const ordered  = Number(byId[ORDER_COL_ORDERED]?.text?.replace(",", ".") || 0);
-  const received = Number(byId[ORDER_COL_RECEIVED]?.text?.replace(",", ".") || 0);
+  const ordered  = Number((byId[ORDER_COL_ORDERED]?.text || "0").replace(",", ".")) || 0;
+  const received = ORDER_COL_RECEIVED
+    ? Number((byId[ORDER_COL_RECEIVED]?.text || "0").replace(",", ".")) || 0
+    : 0; // si pas de colonne, on considère 0 reçu
   const remaining = fmt2n(ordered - received);
-  const laize    = Number(byId[ORDER_COL_WIDTH]?.text?.replace(",", ".") || 0) || null;
-  const unit     = byId[ORDER_COL_UNIT]?.text || "ML";
+
+  const laize    = Number((byId[ORDER_COL_WIDTH]?.text || "").replace(",", ".")) || null;
+  const unit     = (byId[ORDER_COL_UNIT]?.text || "ML").trim() || "ML";
   const status   = byId[ORDER_COL_STATUS]?.text || "";
 
   return {
@@ -166,15 +164,14 @@ function mapOrderItemToOrderLine(item) {
   };
 }
 
-// Créer 1 item par rouleau dans le board STOCK + QR (texte + PNG optionnel)
 async function createStockItemsFromReceipt({
   orderLine,
   qtyReceived,
   rollsCount,
-  lengths,     // null -> répartition égale
+  lengths, // null => répartition égale
   batch,
   dateISO,
-  uploadQrPng = false, // mettez true si vous avez la colonne Files et que l’upload fonctionne
+  uploadQrPng = false,
 }) {
   const perRoll = lengths?.length === rollsCount
     ? lengths.map(fmt2n)
@@ -184,14 +181,13 @@ async function createStockItemsFromReceipt({
 
   for (let i = 0; i < rollsCount; i++) {
     const L = fmt2n(perRoll[i]);
-    const Ls = fmt2s(L); // string “2 déc.”
+    const Ls = fmt2s(L);
     const itemName = makeRollCode({ dateISO, orderId: orderLine.orderItemId, rollIndex: i });
 
-    // IMPORTANT : passer des *strings* pour les colonnes Numbers afin d’éviter les formats exotiques
     const colVals = {
       [COL_SUPPLIER]: { text: orderLine.supplier || "" },
       [COL_PRODUCT]:  { text: orderLine.product || "" },
-      [COL_QTY]:      Ls,
+      [COL_QTY]:      Ls,                                  // Numbers → string "x.xx"
       [COL_UNIT]:     { text: orderLine.unit || "ML" },
       [COL_WIDTH]:    orderLine.laize != null ? fmt2s(orderLine.laize) : null,
       [COL_LENGTH]:   Ls,
@@ -199,6 +195,7 @@ async function createStockItemsFromReceipt({
       [COL_DATE_IN]:  { date: dayjs(dateISO).format("YYYY-MM-DD") },
     };
 
+    // 1) Créer l'item rouleau
     const res = await monday.api(MUT_CREATE_ITEM, {
       variables: {
         boardId: STOCK_BOARD_ID,
@@ -210,7 +207,7 @@ async function createStockItemsFromReceipt({
     const newItemId = Number(res?.data?.create_item?.id);
     if (!newItemId) continue;
 
-    // QR : valeur texte (utile pour réimprimer/relire)
+    // 2) Écrire la valeur du QR dans la colonne texte
     const qrValue = makeQrPayload({
       boardId: STOCK_BOARD_ID,
       itemId: newItemId,
@@ -220,8 +217,6 @@ async function createStockItemsFromReceipt({
       batch,
       dateISO,
     });
-
-    // Sauvegarder la valeur dans la colonne texte si présente
     try {
       await monday.api(MUT_CHANGE_COL_VAL, {
         variables: {
@@ -232,13 +227,13 @@ async function createStockItemsFromReceipt({
         },
       });
     } catch (e) {
-      // si la colonne n’existe pas, ignorer
+      // si pas de colonne, on ignore
     }
 
-    // Générer le PNG (DataURL) pour l’aperçu / téléchargement
+    // 3) Générer le PNG (DataURL) pour l’aperçu / téléchargement
     const dataUrl = await QRCode.toDataURL(qrValue, { errorCorrectionLevel: "M", margin: 1, scale: 6 });
 
-    // Optionnel : uploader dans la colonne Fichier
+    // 4) (Option) Uploader le PNG en colonne Fichier
     if (uploadQrPng) {
       try {
         const file = await dataUrlToFile(dataUrl, `${itemName}.png`);
@@ -246,7 +241,7 @@ async function createStockItemsFromReceipt({
           variables: { itemId: newItemId, columnId: COL_QR_FILE, file },
         });
       } catch (e) {
-        // selon navigateur/compte, l’upload GraphQL de file peut varier
+        // selon le contexte, l’upload de fichier GraphQL peut ne pas être dispo
       }
     }
 
@@ -256,7 +251,6 @@ async function createStockItemsFromReceipt({
   return created;
 }
 
-// Mettre à jour la ligne de commande (quantité reçue + statut)
 async function updateOrderLineAfterReceipt({
   orderItemId,
   orderedQty,
@@ -266,34 +260,37 @@ async function updateOrderLineAfterReceipt({
   const newReceived = fmt2n(Number(alreadyReceivedQty || 0) + Number(addedReceivedQty || 0));
   const remaining   = fmt2n(Number(orderedQty || 0) - newReceived);
 
-  // maj quantité reçue
-  await monday.api(MUT_CHANGE_COL_VAL, {
-    variables: {
-      boardId: ORDER_BOARD_ID,
-      itemId: Number(orderItemId),
-      columnId: ORDER_COL_RECEIVED,
-      value: JSON.stringify(fmt2s(newReceived)),
-    },
-  });
+  // maj Qté reçue si la colonne existe
+  if (ORDER_COL_RECEIVED) {
+    await monday.api(MUT_CHANGE_COL_VAL, {
+      variables: {
+        boardId: ORDER_BOARD_ID,
+        itemId: Number(orderItemId),
+        columnId: ORDER_COL_RECEIVED,
+        value: JSON.stringify(fmt2s(newReceived)),
+      },
+    });
+  }
 
-  // statut
-  const status = remaining <= 0 ? { label: "Réception OK" } : { label: "Réception partielle" };
-  await monday.api(MUT_CHANGE_COL_VAL, {
-    variables: {
-      boardId: ORDER_BOARD_ID,
-      itemId: Number(orderItemId),
-      columnId: ORDER_COL_STATUS,
-      value: JSON.stringify(status),
-    },
-  });
+  // maj Statut si la colonne existe
+  if (ORDER_COL_STATUS) {
+    const status = remaining <= 0 ? { label: "Réception OK" } : { label: "Réception partielle" };
+    await monday.api(MUT_CHANGE_COL_VAL, {
+      variables: {
+        boardId: ORDER_BOARD_ID,
+        itemId: Number(orderItemId),
+        columnId: ORDER_COL_STATUS,
+        value: JSON.stringify(status),
+      },
+    });
+  }
 
   return { newReceived, remaining };
 }
 
-/** ============================
- *  ===  UI: DIALOG RÉCEPTION ===
- *  ============================ */
-
+/* =========================
+   UI — DIALOG RÉCEPTION
+   ========================= */
 function ReceiveDialog({ open, onClose, orderLine, onDone }) {
   const [qty, setQty] = useState(orderLine?.remainingQty ?? 0);
   const [rolls, setRolls] = useState(1);
@@ -334,7 +331,7 @@ function ReceiveDialog({ open, onClose, orderLine, onDone }) {
       lengths: payloadLengths,
       batch,
       dateISO,
-      uploadQrPng: false, // passez à true si vous avez bien la colonne Files et que ça fonctionne
+      uploadQrPng: false, // passe à true si tu veux uploader le PNG dans la colonne Files
     });
 
     await updateOrderLineAfterReceipt({
@@ -350,133 +347,94 @@ function ReceiveDialog({ open, onClose, orderLine, onDone }) {
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-white rounded-2xl p-4 w-full max-w-2xl shadow-xl">
-        <h2 className="text-xl font-semibold mb-2">
-          Réception – {orderLine?.product} ({orderLine?.supplier})
+    <div className="fixed inset-0" style={{background: "rgba(0,0,0,.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:9999}}>
+      <div className="bg-white" style={{borderRadius:16, padding:16, width:"100%", maxWidth:800, boxShadow:"0 10px 30px rgba(0,0,0,.2)"}}>
+        <h2 style={{fontSize:18, fontWeight:600, marginBottom:8}}>
+          Réception – {orderLine?.product} {orderLine?.supplier ? `(${orderLine?.supplier})` : ""}
         </h2>
 
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex flex-col">
+        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12}}>
+          <label style={{display:"flex", flexDirection:"column"}}>
             Quantité reçue ({orderLine?.unit || "ML"})
-            <input
-              type="number"
-              step="0.01"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              className="border rounded p-2"
-            />
+            <input type="number" step="0.01" value={qty} onChange={(e)=>setQty(e.target.value)} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}/>
           </label>
 
-          <label className="flex flex-col">
+          <label style={{display:"flex", flexDirection:"column"}}>
             Nombre de rouleaux
-            <input
-              type="number"
-              min="1"
-              value={rolls}
-              onChange={(e) => {
-                const r = Math.max(1, Number(e.target.value) || 1);
-                setRolls(r);
-                if (mode === "perso") {
-                  setLengths((prev) => {
-                    const copy = Array.from({ length: r }, (_, i) => prev?.[i] ?? perRoll);
-                    return copy.map(fmt2n);
-                  });
-                }
-              }}
-              className="border rounded p-2"
-            />
+            <input type="number" min="1" value={rolls} onChange={(e)=>{
+              const r = Math.max(1, Number(e.target.value) || 1);
+              setRolls(r);
+              if (mode === "perso") {
+                setLengths((prev)=>{
+                  const copy = Array.from({length:r}, (_,i)=> prev?.[i] ?? perRoll);
+                  return copy.map(fmt2n);
+                });
+              }
+            }} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}/>
           </label>
 
-          <label className="flex flex-col">
+          <label style={{display:"flex", flexDirection:"column"}}>
             Répartition
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="border rounded p-2"
-            >
+            <select value={mode} onChange={(e)=>setMode(e.target.value)} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}>
               <option value="egal">Égale ({fmt2s(perRoll)} / rouleau)</option>
               <option value="perso">Personnalisée</option>
             </select>
           </label>
 
-          <label className="flex flex-col">
+          <label style={{display:"flex", flexDirection:"column"}}>
             Laize (mm)
-            <input
-              type="number"
-              step="0.01"
-              value={laize}
-              onChange={(e) => setLaize(e.target.value)}
-              className="border rounded p-2"
-            />
+            <input type="number" step="0.01" value={laize ?? ""} onChange={(e)=>setLaize(e.target.value)} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}/>
           </label>
 
-          <label className="flex flex-col">
+          <label style={{display:"flex", flexDirection:"column"}}>
             Batch fournisseur
-            <input
-              type="text"
-              value={batch}
-              onChange={(e) => setBatch(e.target.value)}
-              className="border rounded p-2"
-            />
+            <input type="text" value={batch} onChange={(e)=>setBatch(e.target.value)} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}/>
           </label>
 
-          <label className="flex flex-col">
+          <label style={{display:"flex", flexDirection:"column"}}>
             Date d’entrée
-            <input
-              type="date"
-              value={dayjs(dateISO).format("YYYY-MM-DD")}
-              onChange={(e) => setDateISO(new Date(e.target.value).toISOString())}
-              className="border rounded p-2"
-            />
+            <input type="date" value={dayjs(dateISO).format("YYYY-MM-DD")} onChange={(e)=>setDateISO(new Date(e.target.value).toISOString())} style={{border:"1px solid #ccc", borderRadius:8, padding:8}}/>
           </label>
         </div>
 
         {mode === "perso" && (
-          <div className="mt-3">
-            <table className="w-full text-sm">
+          <div style={{marginTop:12}}>
+            <table style={{width:"100%", fontSize:14}}>
               <thead>
-                <tr>
-                  <th className="text-left">Rouleau</th>
-                  <th className="text-left">Longueur</th>
-                </tr>
+                <tr><th style={{textAlign:"left"}}>Rouleau</th><th style={{textAlign:"left"}}>Longueur</th></tr>
               </thead>
               <tbody>
-                {Array.from({ length: rolls }).map((_, i) => (
+                {Array.from({length: rolls}).map((_,i)=>(
                   <tr key={i}>
-                    <td>R{i + 1}</td>
+                    <td>R{i+1}</td>
                     <td>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="border rounded p-1"
-                        value={lengths?.[i] ?? perRoll}
-                        onChange={(e) => {
+                      <input type="number" step="0.01" value={lengths?.[i] ?? perRoll}
+                        onChange={(e)=>{
                           const v = fmt2n(e.target.value);
-                          setLengths((prev) => {
-                            const x = [...(prev || [])];
+                          setLengths((prev)=>{
+                            const x = [...(prev||[])];
                             x[i] = v;
                             return x;
                           });
                         }}
-                      />
+                        style={{border:"1px solid #ccc", borderRadius:8, padding:6}}/>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <p className={`mt-1 ${delta === 0 ? "text-green-600" : "text-red-600"}`}>
+            <p style={{marginTop:6, color: delta===0 ? "#16a34a" : "#dc2626"}}>
               Somme longueurs = {fmt2s(totalPerso)} (Δ = {fmt2s(delta)} vs quantité reçue)
             </p>
           </div>
         )}
 
-        <div className="mt-4 flex gap-2 justify-end">
-          <button onClick={onClose} className="border rounded px-3 py-2">Annuler</button>
+        <div style={{marginTop:16, display:"flex", gap:8, justifyContent:"flex-end"}}>
+          <button onClick={onClose} style={{border:"1px solid #ccc", borderRadius:8, padding:"8px 12px", background:"#fff"}}>Annuler</button>
           <button
             onClick={proceed}
-            disabled={Number(qty) <= 0 || (mode === "perso" && delta !== 0)}
-            className="bg-black text-white rounded px-3 py-2"
+            disabled={Number(qty)<=0 || (mode==="perso" && delta!==0)}
+            style={{border:"1px solid #000", borderRadius:8, padding:"8px 12px", background:"#000", color:"#fff"}}
           >
             Valider la réception
           </button>
@@ -486,46 +444,56 @@ function ReceiveDialog({ open, onClose, orderLine, onDone }) {
   );
 }
 
-/** ============================
- *  ===  UI PRINCIPALE (App) ===
- *  ============================ */
+/* =========================
+   UI PRINCIPALE — BOUTONS + VUES
+   ========================= */
+const VIEWS = { RECEPTION: "RECEPTION", OUTBOUND: "OUTBOUND", INVENTORY: "INVENTORY" };
+function cx(...cls) { return cls.filter(Boolean).join(" "); }
 
 export default function App() {
+  const [view, setView] = useState(VIEWS.RECEPTION);
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState("");
+  const [allLines, setAllLines] = useState([]);
   const [pendingLines, setPendingLines] = useState([]);
 
-  // Dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedLine, setSelectedLine] = useState(null);
-  const [lastCreated, setLastCreated] = useState([]); // récap des items/QR créés
+  const [lastCreated, setLastCreated] = useState([]);
 
-  // Exemple générique: récupérer toutes les lignes, filtrer par fournisseur et statut (client-side)
+  // On log le contexte pour debug mais on n'écrase pas BOARD_ID
+  useEffect(() => {
+    monday.get("context").then((res) => {
+      console.log("Contexte Monday (board ouvert):", res?.data);
+    });
+  }, []);
+
+  // Charger toutes les lignes du groupe COMMANDES (actuellement "topics")
   useEffect(() => {
     (async () => {
-      // Si vous avez DÉJÀ votre logique fournisseur + lignes, vous pouvez SUPPRIMER ce bloc
-      const items = await fetchOrderLinesAll();
+      const items = await fetchOrderLinesFromGroup(ORDER_BOARD_ID, ORDER_GROUP_ID);
       const lines = items.map(mapOrderItemToOrderLine);
 
-      // fournisseurs uniques
+      // Fournisseurs uniques
       const uniq = Array.from(new Set(lines.map((l) => l.supplier).filter(Boolean))).sort();
       setSuppliers(uniq);
-
-      // si aucun fournisseur sélectionné, prendre le 1er s’il existe
       if (!selectedSupplier && uniq.length > 0) {
         setSelectedSupplier(uniq[0]);
       }
 
-      // maj lignes selon filtre courant
-      const filtered = lines.filter(
-        (l) =>
-          (!!selectedSupplier ? l.supplier === selectedSupplier : true) &&
-          l.remainingQty > 0 // non réceptionné totalement
-      );
-      setPendingLines(filtered);
+      setAllLines(lines);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSupplier]);
+  }, []);
+
+  // Filtrer selon fournisseur + “reste > 0”
+  useEffect(() => {
+    const filtered = allLines.filter((l) =>
+      (selectedSupplier ? l.supplier === selectedSupplier : true) &&
+      Number(l.remainingQty) > 0
+    );
+    setPendingLines(filtered);
+  }, [allLines, selectedSupplier]);
 
   const onClickLine = (line) => {
     setSelectedLine(line);
@@ -533,97 +501,150 @@ export default function App() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Réceptions fournisseurs → Stock</h1>
+    <div style={{padding:16, display:"grid", gap:16}}>
+      {/* Toolbar */}
+      <header style={{display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <div style={{fontSize:12, opacity:0.7}}>
+          Source: ENTRÉES DE STOCK #{BOARD_ID} • Groupe stock: {STOCK_GROUP_ID}
+        </div>
+        <nav style={{display:"flex", gap:8}}>
+          <button
+            onClick={() => setView(VIEWS.RECEPTION)}
+            className={cx("btn")}
+            style={{
+              padding:"8px 12px", borderRadius:8, border:"1px solid",
+              background: view===VIEWS.RECEPTION ? "#000" : "#fff",
+              color: view===VIEWS.RECEPTION ? "#fff" : "#000"
+            }}
+          >
+            Mettre en stock
+          </button>
+          <button
+            onClick={() => setView(VIEWS.OUTBOUND)}
+            style={{
+              padding:"8px 12px", borderRadius:8, border:"1px solid",
+              background: view===VIEWS.OUTBOUND ? "#000" : "#fff",
+              color: view===VIEWS.OUTBOUND ? "#fff" : "#000"
+            }}
+          >
+            Sortie stock
+          </button>
+          <button
+            onClick={() => setView(VIEWS.INVENTORY)}
+            style={{
+              padding:"8px 12px", borderRadius:8, border:"1px solid",
+              background: view===VIEWS.INVENTORY ? "#000" : "#fff",
+              color: view===VIEWS.INVENTORY ? "#fff" : "#000"
+            }}
+          >
+            Inventaire
+          </button>
+        </nav>
       </header>
 
-      {/* Sélecteur fournisseur */}
-      <div className="flex items-center gap-2">
-        <span>Fournisseur :</span>
-        <select
-          className="border rounded p-2"
-          value={selectedSupplier}
-          onChange={(e) => setSelectedSupplier(e.target.value)}
-        >
-          {suppliers.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Lignes non réceptionnées */}
-      <div className="border rounded-2xl p-3">
-        <h2 className="text-lg font-medium mb-2">Lignes à réceptionner</h2>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left">
-              <th>Produit</th>
-              <th>Qté cmd</th>
-              <th>Qté reçue</th>
-              <th>Reste</th>
-              <th>Laize</th>
-              <th>Unité</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {pendingLines.length === 0 && (
-              <tr><td colSpan={7} className="text-gray-500 p-2">Aucune ligne en attente pour ce fournisseur.</td></tr>
-            )}
-            {pendingLines.map((l) => (
-              <tr key={l.orderItemId} className="border-t">
-                <td className="py-1">{l.product}</td>
-                <td>{fmt2s(l.orderedQty)}</td>
-                <td>{fmt2s(l.receivedQty)}</td>
-                <td className="font-medium">{fmt2s(l.remainingQty)}</td>
-                <td>{l.laize ? fmt2s(l.laize) : "-"}</td>
-                <td>{l.unit || "ML"}</td>
-                <td>
-                  <button
-                    onClick={() => onClickLine(l)}
-                    className="text-white bg-black rounded px-3 py-1"
-                  >
-                    Mettre en stock
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Récapitulatif dernière réception (QR téléchargeables) */}
-      {lastCreated.length > 0 && (
-        <div className="border rounded-2xl p-3">
-          <h3 className="font-medium mb-2">Récap – QR créés</h3>
-          <div className="grid md:grid-cols-3 gap-3">
-            {lastCreated.map((c) => (
-              <div key={c.itemId} className="border rounded-lg p-2">
-                <div className="text-sm font-semibold">{c.itemName}</div>
-                <div className="text-xs text-gray-600 mb-1">Longueur: {fmt2s(c.length)}</div>
-                <img src={c.dataUrl} alt={`QR ${c.itemName}`} className="w-40 h-40 object-contain" />
-                <a
-                  href={c.dataUrl}
-                  download={`${c.itemName}.png`}
-                  className="inline-block mt-2 text-xs underline"
-                >
-                  Télécharger le QR
-                </a>
-              </div>
-            ))}
+      {/* VUE RECEPTION */}
+      {view === VIEWS.RECEPTION && (
+        <>
+          {/* Sélecteur fournisseur */}
+          <div style={{display:"flex", gap:8, alignItems:"center"}}>
+            <span>Fournisseur :</span>
+            <select
+              value={selectedSupplier}
+              onChange={(e)=>setSelectedSupplier(e.target.value)}
+              style={{border:"1px solid #ccc", borderRadius:8, padding:8}}
+            >
+              {suppliers.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
+
+          {/* Lignes à réceptionner */}
+          <div style={{border:"1px solid #eee", borderRadius:16, padding:12}}>
+            <h2 style={{fontSize:18, fontWeight:600, marginBottom:8}}>Lignes à réceptionner</h2>
+            <table style={{width:"100%", fontSize:14}}>
+              <thead>
+                <tr style={{textAlign:"left"}}>
+                  <th>Produit</th>
+                  <th>Qté cmd</th>
+                  <th>Qté reçue</th>
+                  <th>Reste</th>
+                  <th>Laize</th>
+                  <th>Unité</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingLines.length === 0 && (
+                  <tr><td colSpan={7} style={{color:"#666", padding:"8px 0"}}>Aucune ligne en attente pour ce fournisseur.</td></tr>
+                )}
+                {pendingLines.map((l) => (
+                  <tr key={l.orderItemId} style={{borderTop:"1px solid #f0f0f0"}}>
+                    <td style={{padding:"6px 0"}}>{l.product}</td>
+                    <td>{fmt2s(l.orderedQty)}</td>
+                    <td>{fmt2s(l.receivedQty)}</td>
+                    <td style={{fontWeight:600}}>{fmt2s(l.remainingQty)}</td>
+                    <td>{l.laize != null ? fmt2s(l.laize) : "-"}</td>
+                    <td>{l.unit || "ML"}</td>
+                    <td>
+                      <button
+                        onClick={() => onClickLine(l)}
+                        style={{padding:"6px 10px", borderRadius:8, border:"1px solid #000", background:"#000", color:"#fff"}}
+                      >
+                        Mettre en stock
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Récap QR créés */}
+          {lastCreated.length > 0 && (
+            <div style={{border:"1px solid #eee", borderRadius:16, padding:12}}>
+              <h3 style={{fontWeight:600, marginBottom:8}}>Récap – QR créés</h3>
+              <div style={{display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))"}}>
+                {lastCreated.map((c) => (
+                  <div key={c.itemId} style={{border:"1px solid #eee", borderRadius:12, padding:8}}>
+                    <div style={{fontSize:13, fontWeight:600}}>{c.itemName}</div>
+                    <div style={{fontSize:12, color:"#666", marginBottom:6}}>Longueur: {fmt2s(c.length)}</div>
+                    <img src={c.dataUrl} alt={`QR ${c.itemName}`} style={{width:160, height:160, objectFit:"contain"}} />
+                    <a href={c.dataUrl} download={`${c.itemName}.png`} style={{display:"inline-block", marginTop:6, fontSize:12, textDecoration:"underline"}}>
+                      Télécharger le QR
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Dialog */}
+          {selectedLine && (
+            <ReceiveDialog
+              open={dialogOpen}
+              onClose={() => setDialogOpen(false)}
+              orderLine={selectedLine}
+              onDone={(created) => setLastCreated(created)}
+            />
+          )}
+        </>
+      )}
+
+      {/* VUE SORTIE (placeholder) */}
+      {view === VIEWS.OUTBOUND && (
+        <div style={{border:"1px solid #eee", borderRadius:16, padding:12}}>
+          <h2 style={{fontSize:18, fontWeight:600, marginBottom:8}}>Sortie stock</h2>
+          <p style={{fontSize:13, opacity:0.7}}>À venir : sélection d’articles (scan QR), quantité sortie, motif, document de sortie.</p>
         </div>
       )}
 
-      {/* Dialog */}
-      {selectedLine && (
-        <ReceiveDialog
-          open={dialogOpen}
-          onClose={() => setDialogOpen(false)}
-          orderLine={selectedLine}
-          onDone={(created) => setLastCreated(created)}
-        />
+      {/* VUE INVENTAIRE (placeholder) */}
+      {view === VIEWS.INVENTORY && (
+        <div style={{border:"1px solid #eee", borderRadius:16, padding:12}}>
+          <h2 style={{fontSize:18, fontWeight:600, marginBottom:8}}>Inventaire</h2>
+          <p style={{fontSize:13, opacity:0.7}}>À venir : filtres (fournisseur/matière/laize), regroupements, export CSV.</p>
+        </div>
       )}
     </div>
   );
