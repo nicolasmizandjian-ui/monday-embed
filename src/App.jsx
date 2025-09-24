@@ -2,8 +2,63 @@
 import React, { useMemo, useState } from "react";
 import "./App.css";
 import mondaySdk from "monday-sdk-js";
+import ReceptionModal from "./components/ReceptionModal.jsx";
+import { ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, /* … COL_* … */ } from "../config/mondayIds";
 
 const monday = mondaySdk();
+
+// === BOARDS & GROUPS ===
+const ENTRY_BOARD_ID = "7678082330"; // Entrées de stock (lignes d’achat) – déjà utilisé comme BOARD_ID
+const ROLLS_BOARD_ID = "TODO_STOCK_ROULEAUX_BOARD_ID";
+const ROLLS_GROUP_ID = "TODO_GROUPE_STOCK"; // ex. "stock"
+
+// === CATALOGUE ===
+const CATALOG_BOARD_ID = "TODO_CATALOGUE_SONEFI_BOARD_ID";
+
+// === COLS Entrées (lignes d’achat) ===
+const COL_UNIT_ENTRY     = "TODO_UNITE";          // Status: ML / UNITE
+const COL_WIDTH_ENTRY    = "TODO_LAIZE_MM";       // Number (mm)
+const COL_QTY_RCVD_CUM   = "TODO_QTE_RECUE_CUM";  // Number
+const COL_QTY_LEFT_FORM  = "TODO_RESTE_A_RECEVOIR_FORMULA"; // Formula (option)
+const COL_LAST_RECEIPT   = "TODO_DERNIERE_RECEPTION";       // Date
+const COL_ROLLS_COUNT    = "TODO_NB_ROULEAUX";    // Number
+const COL_ROLLS_LINK     = "TODO_ROULEAUX_LIES";  // Connect boards -> Stock Rouleaux
+const COL_LOCK_RECEIPT   = "TODO_RECEPTION_EN_COURS"; // Status/Toggle
+
+// === COLS Catalogue (board “Catalogue Sonefi”) ===
+const COL_CAT_CATALOG    = "TODO_CAT_CATALOG";     // Status
+const COL_REF_TEXT_CAT   = "TODO_REF_TEXT";        // Text unique (réf SONEFI)
+const COL_ACTIVE_CAT     = "TODO_ACTIF";           // Status (Actif/Oui)
+const COL_UNIT_DEFAULT   = "TODO_UNITE_DEF";       // (option) Text/Status
+const COL_WIDTH_DEFAULT  = "TODO_LAIZE_DEF";       // (option) Number
+
+// === COLS Stock Rouleaux ===
+const COL_LINK_PARENT_ROLL = "TODO_LIGNE_ACHAT";   // Connect boards -> Entrées
+const COL_SUPPLIER_ROLL    = "TODO_FOURNISSEUR_ROLL"; // (Text ou Mirror si tu préfères)
+const COL_CAT_ROLL         = "TODO_CATEGORIE_ROLL";   // Status (mêmes labels que catalogue)
+const COL_REF_LINK_ROLL    = "TODO_REF_LINK_ROLL";    // Connect boards -> Catalogue
+const COL_REF_TEXT_ROLL    = "TODO_REF_TEXT_ROLL";    // Text (snapshot lisible)
+const COL_WIDTH_ROLL       = "TODO_LAIZE_MM_ROLL";    // Number
+const COL_LENGTH_ROLL      = "TODO_LONGUEUR_ML_ROLL"; // Number (visible si unité=ML)
+const COL_UNIT_ROLL        = "TODO_UNITE_ROLL";       // Text/Status (recopie)
+const COL_VENDOR_LOT_ROLL  = "TODO_LOT_FOURNISSEUR";  // Text (obligatoire)
+const COL_BATCH_ROLL       = "TODO_BATCH_INTERNE";    // Text
+const COL_DATE_IN_ROLL     = "TODO_DATE_RECEPTION";   // Date
+const COL_LOC_ROLL         = "TODO_EMPLACEMENT";      // Text/Status
+const COL_QUALITY_ROLL     = "TODO_QUALITE";          // Status: OK / Quarantaine / Rejet
+const COL_QR_ROLL          = "TODO_QR_FILES";         // Files
+
+// === SUBITEMS Entrées : journal réception ===
+const COL_JOURNAL_DATE   = "TODO_J_DATE";
+const COL_JOURNAL_BL     = "TODO_J_BL";
+const COL_JOURNAL_LOT    = "TODO_J_LOT";
+const COL_JOURNAL_QTY    = "TODO_J_QTY";
+const COL_JOURNAL_UNIT   = "TODO_J_UNIT";
+const COL_JOURNAL_NBROLL = "TODO_J_NBROLL";
+const COL_JOURNAL_USER   = "TODO_J_USER";
+
+// === PARAMS ===
+const RECEIPT_TOLERANCE = 0.005; // 0,5%
 
 // === CONFIG (confirmé) ===
 const BOARD_ID     = "7678082330";       // ENTRÉES DE STOCK
@@ -42,6 +97,7 @@ export default function App() {
   const [supplierCounts, setSupplierCounts] = useState({}); // { Fournisseur: nb }
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [supplierQuery, setSupplierQuery] = useState("");
+  const [selectedEntry, setSelectedEntry] = useState(null);
 
   // Boutons
   const actions = [
@@ -86,7 +142,7 @@ export default function App() {
         variables: {
           boardId: String(BOARD_ID),
           limit: 200,
-          cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY],
+          cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY, COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT],
         },
       });
       if (res?.errors?.length) throw new Error(res.errors.map(e => e.message).join(" | "));
@@ -102,6 +158,11 @@ export default function App() {
           supplier: (byId[COL_SUPPLIER] || "").trim(),
           product:  stripHtml(byId[COL_PRODUCT] || it.name),
           qtyDisplay: formatQty(byId[COL_QTY] || ""),
+          qtyRaw: byId[COL_QTY] || "",
+          unit: (byId[COL_UNIT_ENTRY] || "").trim(),
+          widthMm: byId[COL_WIDTH_ENTRY] || "",
+          qtyReceivedCum: byId[COL_QTY_RCVD_CUM] || "0",
+          nbRolls: byId[COL_ROLLS_COUNT] || "0",
         };
       });
 
@@ -212,15 +273,27 @@ export default function App() {
                 ) : (
                   <div style={{ maxHeight: 380, overflow: "auto", display: "grid", gap: 10 }}>
                     {supplierLines.map((ln) => (
-                      <div key={ln.id} className="ga-card pastel-grey" style={{ cursor: "default" }}>
-                        <div className="ga-icon">📦</div>
-                        <div style={{ display: "grid" }}>
-                          <div className="ga-label">{ln.product || "(Sans description)"}</div>
-                          <div style={{ fontSize: 14, opacity: 0.85 }}>
-                            Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
-                          </div>
-                        </div>
+                      <div
+                        key={ln.id}
+                        className="ga-card pastel-grey"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          setSelectedEntry({
+                            id: ln.id,
+                            name: ln.name,
+                            supplier: ln.supplier,
+                            product: ln.product,
+                            qtyCommanded: parseFloat(String(ln.qtyRaw).replace(",", ".")) || 0,
+                            unit: ln.unit || "ML",
+                            widthMm: ln.widthMm ? parseFloat(String(ln.widthMm).replace(",", ".")) : undefined,
+                            qtyReceivedCum: ln.qtyReceivedCum ? parseFloat(String(ln.qtyReceivedCum).replace(",", ".")) : 0,
+                            nbRolls: ln.nbRolls ? parseInt(ln.nbRolls,10) : 0,
+                          });
+                        }}
+                      >
+                        {/* ton rendu existant */}
                       </div>
+
                     ))}
                   </div>
                 )}
@@ -237,6 +310,16 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+      {selectedEntry && (
+        <ReceptionModal
+          open={!!selectedEntry}
+          entryItem={selectedEntry}
+          onClose={(refresh) => {
+            setSelectedEntry(null);
+            if (refresh) openStockModal(); // recharge la liste après validation
+          }}
+        />
       )}
     </div>
   );
