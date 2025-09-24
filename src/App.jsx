@@ -7,55 +7,17 @@ import { ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, /* … COL_* … */ } f
 
 const monday = mondaySdk();
 
-// === BOARDS & GROUPS ===
-const ENTRY_BOARD_ID = "7678082330"; // Entrées de stock (lignes d’achat) – déjà utilisé comme BOARD_ID
-const ROLLS_BOARD_ID = "TODO_STOCK_ROULEAUX_BOARD_ID";
-const ROLLS_GROUP_ID = "TODO_GROUPE_STOCK"; // ex. "stock"
+import {
+  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID,
+  CATALOG_BOARD_ID,
+  COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT, COL_ROLLS_LINK, COL_LOCK_RECEIPT,
+  COL_CAT_CATALOG, COL_REF_TEXT_CAT, COL_ACTIVE_CAT, COL_UNIT_DEFAULT, COL_WIDTH_DEFAULT,
+  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_LINK_ROLL, COL_REF_TEXT_ROLL,
+  COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
+  COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL,
+  COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
+} from "./config/mondayIds";
 
-// === CATALOGUE ===
-const CATALOG_BOARD_ID = "TODO_CATALOGUE_SONEFI_BOARD_ID";
-
-// === COLS Entrées (lignes d’achat) ===
-const COL_UNIT_ENTRY     = "TODO_UNITE";          // Status: ML / UNITE
-const COL_WIDTH_ENTRY    = "TODO_LAIZE_MM";       // Number (mm)
-const COL_QTY_RCVD_CUM   = "TODO_QTE_RECUE_CUM";  // Number
-const COL_QTY_LEFT_FORM  = "TODO_RESTE_A_RECEVOIR_FORMULA"; // Formula (option)
-const COL_LAST_RECEIPT   = "TODO_DERNIERE_RECEPTION";       // Date
-const COL_ROLLS_COUNT    = "TODO_NB_ROULEAUX";    // Number
-const COL_ROLLS_LINK     = "TODO_ROULEAUX_LIES";  // Connect boards -> Stock Rouleaux
-const COL_LOCK_RECEIPT   = "TODO_RECEPTION_EN_COURS"; // Status/Toggle
-
-// === COLS Catalogue (board “Catalogue Sonefi”) ===
-const COL_CAT_CATALOG    = "TODO_CAT_CATALOG";     // Status
-const COL_REF_TEXT_CAT   = "TODO_REF_TEXT";        // Text unique (réf SONEFI)
-const COL_ACTIVE_CAT     = "TODO_ACTIF";           // Status (Actif/Oui)
-const COL_UNIT_DEFAULT   = "TODO_UNITE_DEF";       // (option) Text/Status
-const COL_WIDTH_DEFAULT  = "TODO_LAIZE_DEF";       // (option) Number
-
-// === COLS Stock Rouleaux ===
-const COL_LINK_PARENT_ROLL = "TODO_LIGNE_ACHAT";   // Connect boards -> Entrées
-const COL_SUPPLIER_ROLL    = "TODO_FOURNISSEUR_ROLL"; // (Text ou Mirror si tu préfères)
-const COL_CAT_ROLL         = "TODO_CATEGORIE_ROLL";   // Status (mêmes labels que catalogue)
-const COL_REF_LINK_ROLL    = "TODO_REF_LINK_ROLL";    // Connect boards -> Catalogue
-const COL_REF_TEXT_ROLL    = "TODO_REF_TEXT_ROLL";    // Text (snapshot lisible)
-const COL_WIDTH_ROLL       = "TODO_LAIZE_MM_ROLL";    // Number
-const COL_LENGTH_ROLL      = "TODO_LONGUEUR_ML_ROLL"; // Number (visible si unité=ML)
-const COL_UNIT_ROLL        = "TODO_UNITE_ROLL";       // Text/Status (recopie)
-const COL_VENDOR_LOT_ROLL  = "TODO_LOT_FOURNISSEUR";  // Text (obligatoire)
-const COL_BATCH_ROLL       = "TODO_BATCH_INTERNE";    // Text
-const COL_DATE_IN_ROLL     = "TODO_DATE_RECEPTION";   // Date
-const COL_LOC_ROLL         = "TODO_EMPLACEMENT";      // Text/Status
-const COL_QUALITY_ROLL     = "TODO_QUALITE";          // Status: OK / Quarantaine / Rejet
-const COL_QR_ROLL          = "TODO_QR_FILES";         // Files
-
-// === SUBITEMS Entrées : journal réception ===
-const COL_JOURNAL_DATE   = "TODO_J_DATE";
-const COL_JOURNAL_BL     = "TODO_J_BL";
-const COL_JOURNAL_LOT    = "TODO_J_LOT";
-const COL_JOURNAL_QTY    = "TODO_J_QTY";
-const COL_JOURNAL_UNIT   = "TODO_J_UNIT";
-const COL_JOURNAL_NBROLL = "TODO_J_NBROLL";
-const COL_JOURNAL_USER   = "TODO_J_USER";
 
 // === PARAMS ===
 const RECEIPT_TOLERANCE = 0.005; // 0,5%
