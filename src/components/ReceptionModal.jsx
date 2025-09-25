@@ -24,6 +24,7 @@ function formatQty(q) {
   if (Number.isNaN(n)) return q || "—";
   return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
+const RECEIPT_TOLERANCE = 0.005; // 0,5 %
 
 function ReceptionModal({
   open, onClose,
