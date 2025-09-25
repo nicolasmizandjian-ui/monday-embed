@@ -238,25 +238,32 @@ export default function App() {
                       <div
                         key={ln.id}
                         className="ga-card pastel-grey"
-                        style={{ cursor: "pointer" }}
+                        style={{ cursor: "pointer" }}           // ← pointer au lieu de default
                         onClick={() => {
                           setSelectedEntry({
                             id: ln.id,
                             name: ln.name,
                             supplier: ln.supplier,
                             product: ln.product,
-                            qtyCommanded: parseFloat(String(ln.qtyRaw).replace(",", ".")) || 0,
+                            // valeurs par défaut si tu n’as pas encore câblé les colonnes
+                            qtyCommanded: parseFloat(String(ln.qtyRaw || "0").replace(",", ".")) || 0,
                             unit: ln.unit || "ML",
                             widthMm: ln.widthMm ? parseFloat(String(ln.widthMm).replace(",", ".")) : undefined,
                             qtyReceivedCum: ln.qtyReceivedCum ? parseFloat(String(ln.qtyReceivedCum).replace(",", ".")) : 0,
-                            nbRolls: ln.nbRolls ? parseInt(ln.nbRolls,10) : 0,
+                            nbRolls: ln.nbRolls ? parseInt(ln.nbRolls, 10) : 0,
                           });
                         }}
                       >
-                        {/* ton rendu existant */}
+                        <div className="ga-icon">📦</div>
+                        <div style={{ display: "grid" }}>
+                          <div className="ga-label">{ln.product || "(Sans description)"}</div>
+                          <div style={{ fontSize: 14, opacity: 0.85 }}>
+                            Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
+                          </div>
+                        </div>
                       </div>
-
                     ))}
+
                   </div>
                 )}
 
@@ -284,5 +291,6 @@ export default function App() {
         />
       )}
     </div>
+
   );
 }
