@@ -3,6 +3,7 @@ import React, { useMemo, useState } from "react";
 import "./App.css";
 import mondaySdk from "monday-sdk-js";
 import ReceptionModal from "./components/ReceptionModal.jsx";
+import { ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, /* … COL_* … */ } from "../config/mondayIds";
 
 const monday = mondaySdk();
 
@@ -15,7 +16,7 @@ import {
   COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
   COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL,
   COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
-} from "./config/mondayIds.js";  // <= UN SEUL import venant de ./config
+} from "./config/mondayIds";
 
 
 // === PARAMS ===
