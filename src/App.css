@@ -128,3 +128,5 @@
   min-width:28px; height:24px; padding:0 8px; border-radius:999px;
   font-weight:600; font-size:12px; background:#eef1f5; color:#3a4b5a;
 }
+.modal-overlay { z-index: 1000; }     /* ta modale fournisseur actuelle */
+.modal-top     { z-index: 2000; }     /* la modale Réception passe au-dessus */

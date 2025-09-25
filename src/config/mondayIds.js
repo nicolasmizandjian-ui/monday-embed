@@ -9,6 +9,7 @@ export const CATALOG_BOARD_ID = "yyyyyyyyyy";   // <- remplace
 export const COL_UNIT_ENTRY    = "col_unite_entry";
 export const COL_WIDTH_ENTRY   = "col_laize_entry";
 export const COL_QTY_RCVD_CUM  = "col_qte_cum";
+export const COL_LAST_RECEIPT  = "col_derniere_reception"; // <-- ajoute l’ID réel de ta colonne Date
 export const COL_ROLLS_COUNT   = "col_nb_rouleaux";
 export const COL_ROLLS_LINK    = "col_rouleaux_lies";
 export const COL_LOCK_RECEIPT  = "col_lock_reception";

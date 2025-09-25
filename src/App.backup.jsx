@@ -230,43 +230,38 @@ export default function App() {
               <>
                 <h2 style={{ marginTop: 0 }}>🧾 Lignes — {selectedSupplier}</h2>
 
-                {supplierLines.length === 0 ? (
-                  <p>Aucune ligne pour ce fournisseur.</p>
-                ) : (
-                  <div style={{ maxHeight: 380, overflow: "auto", display: "grid", gap: 10 }}>
-                    {supplierLines.map((ln) => (
-                      <div
-                        key={ln.id}
-                        className="ga-card pastel-grey"
-                        style={{ cursor: "pointer" }}           // ← pointer au lieu de default
-                        onClick={() => {
-                          setSelectedEntry({
-                            id: ln.id,
-                            name: ln.name,
-                            supplier: ln.supplier,
-                            product: ln.product,
-                            // valeurs par défaut si tu n’as pas encore câblé les colonnes
-                            qtyCommanded: parseFloat(String(ln.qtyRaw || "0").replace(",", ".")) || 0,
-                            unit: ln.unit || "ML",
-                            widthMm: ln.widthMm ? parseFloat(String(ln.widthMm).replace(",", ".")) : undefined,
-                            qtyReceivedCum: ln.qtyReceivedCum ? parseFloat(String(ln.qtyReceivedCum).replace(",", ".")) : 0,
-                            nbRolls: ln.nbRolls ? parseInt(ln.nbRolls, 10) : 0,
-                          });
-                        }}
-                      >
-                        <div className="ga-icon">📦</div>
-                        <div style={{ display: "grid" }}>
-                          <div className="ga-label">{ln.product || "(Sans description)"}</div>
-                          <div style={{ fontSize: 14, opacity: 0.85 }}>
-                            Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
-                          </div>
-                        </div>
+                {supplierLines.map((ln) => (
+                  <div
+                    key={ln.id}
+                    className="ga-card pastel-grey"
+                    style={{ cursor: "pointer" }} {/* pointer au lieu de default */}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      console.log("open réception pour", ln.id); // debug
+                      setSelectedEntry({
+                        id: ln.id,
+                        name: ln.name,
+                        supplier: ln.supplier,
+                        product: ln.product,
+                        qtyCommanded: parseFloat(String(ln.qtyRaw || "0").replace(",", ".")) || 0,
+                        unit: ln.unit || "ML",
+                        widthMm: ln.widthMm ? parseFloat(String(ln.widthMm).replace(",", ".")) : undefined,
+                        qtyReceivedCum: ln.qtyReceivedCum ? parseFloat(String(ln.qtyReceivedCum).replace(",", ".")) : 0,
+                        nbRolls: ln.nbRolls ? parseInt(ln.nbRolls, 10) : 0,
+                      });
+                    }}
+                  >
+                    <div className="ga-icon">📦</div>
+                    <div style={{ display: "grid" }}>
+                      <div className="ga-label">{ln.product || "(Sans description)"}</div>
+                      <div style={{ fontSize: 14, opacity: 0.85 }}>
+                        Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
                       </div>
-                    ))}
-
+                    </div>
                   </div>
-                )}
-
+                ))}
+                
                 <div className="ga-modal-buttons" style={{ marginTop: 12 }}>
                   <button className="ga-btn ghost" onClick={() => setSelectedSupplier("")}>
                     ⬅︎ Retour fournisseurs
