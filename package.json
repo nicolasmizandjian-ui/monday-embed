@@ -34,9 +34,14 @@
   },
   "engines": { 
   "node": "20.x"
-  }
+}
+{
   "devDependencies": {
     "rollup": "4.22.4",
     "@rollup/rollup-linux-x64-gnu": "4.22.4"
+  },
+  "scripts": {
+    "postinstall": "npm i @rollup/rollup-linux-x64-gnu@4.22.4 --no-save || true"
   }
 }
+
