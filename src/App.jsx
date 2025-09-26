@@ -238,7 +238,7 @@ export default function App() {
                       <div
                         key={ln.id}
                         className="ga-card pastel-grey"
-                        style={{ cursor: "pointer" }} {/* pointer au lieu de default */}
+                        style={{ cursor: "pointer" }}
                         role="button"
                         tabIndex={0}
                         onClick={() => {
