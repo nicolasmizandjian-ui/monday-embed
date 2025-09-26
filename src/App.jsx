@@ -3,8 +3,6 @@ import React, { useMemo, useState } from "react";
 import "./App.css";
 import mondaySdk from "monday-sdk-js";
 import ReceptionModal from "./components/ReceptionModal.jsx";
-import { ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, /* … COL_* … */ } from "../config/mondayIds";
-
 const monday = mondaySdk();
 
 import {
