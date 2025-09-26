@@ -4,39 +4,29 @@ import "./App.css";
 import mondaySdk from "monday-sdk-js";
 import ReceptionModal from "./components/ReceptionModal.jsx";
 
-const monday = mondaySdk();
-
+// IDs centralisés (mets tes vrais IDs dans src/config/mondayIds.js)
 import {
-  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID,
-  CATALOG_BOARD_ID,
-  COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT, COL_ROLLS_LINK, COL_LOCK_RECEIPT,
-  COL_CAT_CATALOG, COL_REF_TEXT_CAT, COL_ACTIVE_CAT, COL_UNIT_DEFAULT, COL_WIDTH_DEFAULT,
-  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_LINK_ROLL, COL_REF_TEXT_ROLL,
-  COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
-  COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL,
-  COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
-} from "./config/mondayIds.js";  // <= UN SEUL import venant de ./config
+  ENTRY_BOARD_ID,
+  COL_UNIT_ENTRY,
+  COL_WIDTH_ENTRY,
+  COL_QTY_RCVD_CUM,
+  COL_ROLLS_COUNT,
+} from "./config/mondayIds";
 
+// === Colonnes locales EXISTANTES sur le board Entrées (garde-les ici si tu ne les as pas centralisées)
+const COL_SUPPLIER = "texte9";            // FOURNISSEUR (Text)
+const COL_PRODUCT  = "texte2";            // Description produit (peut contenir HTML)
+const COL_QTY      = "quantit__produit";  // Quantité commandée (Numbers)
 
-// === PARAMS ===
-const RECEIPT_TOLERANCE = 0.005; // 0,5%
-
-// === CONFIG (confirmé) ===
-const BOARD_ID     = "7678082330";       // ENTRÉES DE STOCK
-const COL_SUPPLIER = "texte9";           // FOURNISSEUR (text)
-const COL_PRODUCT  = "texte2";           // Description produit (peut contenir HTML)
-const COL_QTY      = "quantit__produit"; // Quantité produit (numbers)
+const monday = mondaySdk();
 
 // ---------- Helpers ----------
 function stripHtml(html) {
   if (!html) return "";
   const div = document.createElement("div");
   div.innerHTML = html;
-  return (div.textContent || div.innerText || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return (div.textContent || div.innerText || "").replace(/\s+/g, " ").trim();
 }
-
 function formatQty(q) {
   const n = parseFloat(String(q).replace(/\s/g, "").replace(",", "."));
   if (Number.isNaN(n)) return q || "—";
@@ -53,11 +43,13 @@ export default function App() {
   const [error, setError] = useState("");
 
   // Données
-  const [items, setItems] = useState([]);                  // {id,name,supplier,product,qtyDisplay}
+  const [items, setItems] = useState([]);                  // {id,name,supplier,product,qtyDisplay, qtyRaw, unit, widthMm, qtyReceivedCum, nbRolls}
   const [suppliers, setSuppliers] = useState([]);          // ["FOURNISSEUR..."]
   const [supplierCounts, setSupplierCounts] = useState({}); // { Fournisseur: nb }
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [supplierQuery, setSupplierQuery] = useState("");
+
+  // Modale réception
   const [selectedEntry, setSelectedEntry] = useState(null);
 
   // Boutons
@@ -75,7 +67,7 @@ export default function App() {
     else alert(`🛠️ Bientôt : ${a.label}`);
   }
 
-  // ---------- Chargement via boards -> items_page (ta requête B) ----------
+  // ---------- Chargement via boards -> items_page ----------
   async function openStockModal() {
     setShowStockModal(true);
     setSelectedSupplier("");
@@ -103,7 +95,15 @@ export default function App() {
         variables: {
           boardId: String(ENTRY_BOARD_ID),
           limit: 200,
-          cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY, COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT],
+          cols: [
+            COL_SUPPLIER,
+            COL_PRODUCT,
+            COL_QTY,
+            COL_UNIT_ENTRY,
+            COL_WIDTH_ENTRY,
+            COL_QTY_RCVD_CUM,
+            COL_ROLLS_COUNT,
+          ],
         },
       });
       if (res?.errors?.length) throw new Error(res.errors.map(e => e.message).join(" | "));
@@ -112,18 +112,19 @@ export default function App() {
 
       // Normalisation + formats
       const normalized = raw.map((it) => {
-        const byId = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
+        const map = Object.fromEntries((it.column_values || []).map(cv => [cv.id, cv.text]));
+        const qtyRaw = map[COL_QTY] || "";
         return {
           id: it.id,
           name: it.name,
-          supplier: (byId[COL_SUPPLIER] || "").trim(),
-          product:  stripHtml(byId[COL_PRODUCT] || it.name),
-          qtyDisplay: formatQty(byId[COL_QTY] || ""),
-          qtyRaw: byId[COL_QTY] || "",
-          unit: (byId[COL_UNIT_ENTRY] || "").trim(),
-          widthMm: byId[COL_WIDTH_ENTRY] || "",
-          qtyReceivedCum: byId[COL_QTY_RCVD_CUM] || "0",
-          nbRolls: byId[COL_ROLLS_COUNT] || "0",
+          supplier: (map[COL_SUPPLIER] || "").trim(),
+          product: stripHtml(map[COL_PRODUCT] || it.name),
+          qtyDisplay: formatQty(qtyRaw || ""),
+          qtyRaw: qtyRaw,
+          unit: (map[COL_UNIT_ENTRY] || "").trim(),                                 // ex. "ML" / "UNITE"
+          widthMm: (map[COL_WIDTH_ENTRY] || "").trim(),                              // number string
+          qtyReceivedCum: (map[COL_QTY_RCVD_CUM] || "0").trim(),                      // number string
+          nbRolls: (map[COL_ROLLS_COUNT] || "0").trim(),                              // number string
         };
       });
 
@@ -175,7 +176,7 @@ export default function App() {
 
       {error && <p className="ga-error">{error}</p>}
 
-      {/* MODALE STOCK */}
+      {/* MODALE STOCK — Sélection fournisseur & lignes */}
       {showStockModal && (
         <div className="modal-overlay" onClick={() => setShowStockModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -238,13 +239,15 @@ export default function App() {
                         key={ln.id}
                         className="ga-card pastel-grey"
                         style={{ cursor: "pointer" }} {/* pointer au lieu de default */}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
+                          console.log("open réception pour", ln.id);
                           setSelectedEntry({
                             id: ln.id,
                             name: ln.name,
                             supplier: ln.supplier,
                             product: ln.product,
-                            // valeurs par défaut si tu n’as pas encore câblé les colonnes
                             qtyCommanded: parseFloat(String(ln.qtyRaw || "0").replace(",", ".")) || 0,
                             unit: ln.unit || "ML",
                             widthMm: ln.widthMm ? parseFloat(String(ln.widthMm).replace(",", ".")) : undefined,
@@ -257,12 +260,11 @@ export default function App() {
                         <div style={{ display: "grid" }}>
                           <div className="ga-label">{ln.product || "(Sans description)"}</div>
                           <div style={{ fontSize: 14, opacity: 0.85 }}>
-                            Qté prévue : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
+                            Qté commandée : {ln.qtyDisplay} &nbsp;•&nbsp; Item #{ln.id}
                           </div>
                         </div>
                       </div>
                     ))}
-
                   </div>
                 )}
 
@@ -279,6 +281,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* MODALE RÉCEPTION (au-dessus de la précédente grâce à .modal-top dans App.css) */}
       {selectedEntry && (
         <ReceptionModal
           open={!!selectedEntry}
@@ -290,6 +294,5 @@ export default function App() {
         />
       )}
     </div>
-
   );
 }
