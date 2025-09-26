@@ -101,7 +101,7 @@ export default function App() {
     try {
       const res = await monday.api(q, {
         variables: {
-          + boardId: String(ENTRY_BOARD_ID),
+          boardId: String(ENTRY_BOARD_ID),
           limit: 200,
           cols: [COL_SUPPLIER, COL_PRODUCT, COL_QTY, COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT],
         },
@@ -237,7 +237,7 @@ export default function App() {
                       <div
                         key={ln.id}
                         className="ga-card pastel-grey"
-                        style={{ cursor: "pointer" }}           // ← pointer au lieu de default
+                        style={{ cursor: "pointer" }} {/* pointer au lieu de default */}
                         onClick={() => {
                           setSelectedEntry({
                             id: ln.id,
