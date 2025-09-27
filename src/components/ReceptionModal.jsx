@@ -61,7 +61,10 @@ const [loading, setLoading] = useState(false);
 const [err, setErr] = useState("");
 
 // 5) Calculs dérivés
-const qtyLeft = Math.max(0, (entryItem?.qtyCommanded || 0) - (entryItem?.qtyReceivedCum || 0));
+const qtyLeft = Math.max(
+    0,
+    (parseFloat(entryItem?.qtyCommanded) || 0) - (parseFloat(entryItem?.qtyReceivedCum) || 0)
+   );
 const sumRolls = useMemo(
   () => rolls.reduce((s, r) => s + (parseFloat(r.length) || 0), 0),
   [rolls]
@@ -134,25 +137,6 @@ function removeRoll(idx) {
     }
   }, [refSelected, entryItem]);
 
-  function addRollRow() {
-    setRolls(prev => [...prev, { length: 0, widthMm: widthMm || 0, quality: qualityDefault, notes: "" }]);
-  }
-  function setRollField(i, field, val) {
-    setRolls(prev => prev.map((r, idx) => idx===i ? { ...r, [field]: val } : r));
-  }
-  function removeRollRow(i) {
-    setRolls(prev => prev.filter((_, idx) => idx!==i));
-  }
-  function autoDistribute(total, n) {
-    const t = parseFloat(total); const count = parseInt(n,10);
-    if (!t || !count || count<=0) return;
-    const base = Math.floor((t/count)*1000)/1000;
-    const arr = Array.from({length: count}, (_,i) => ({ length: base, widthMm: widthMm||0, quality: qualityDefault, notes:"" }));
-    // Ajuster le dernier avec l'arrondi
-    arr[count-1].length = Math.round((t - base*(count-1))*1000)/1000;
-    setRolls(arr);
-  }
-
   async function handleValidate() {
   try {
     setErr("");
@@ -176,6 +160,15 @@ function removeRoll(idx) {
       if (sum > maxAllowed) {
         throw new Error(`Somme des longueurs (${sum}) > reste autorisé (${qtyLeft} ± tolérance).`);
       }
+      const emptyLots = rolls
+    .map((r, i) => ({ i, lot: (r.vendorLot || "").trim() }))
+    .filter(x => !x.lot);
+
+  if (emptyLots.length) {
+    throw new Error(
+      `Lot fournisseur requis pour chaque rouleau (manquant: ${emptyLots.map(x => `#${x.i + 1}`).join(", ")})`
+    );
+  }
     } else {
       // --- Mode PRODUITS (unités) ---
       if (!piecesQty || piecesQty <= 0) throw new Error("Quantité (pièces) > 0 requise.");
@@ -202,9 +195,11 @@ function removeRoll(idx) {
         const len = parseFloat(r.length) || 0;
         if (len <= 0) continue;
 
-        const newRollId = await createItemInRollsBoard({
-          name: `${refSelected?.name || "Rouleau"} — ${len} ML`,
-        });
+         const newRollId = await createItemInGroup(
+            ROLLS_BOARD_ID,
+             ROLLS_GROUP_ID,
+           `${refSelected?.name || "Rouleau"} — ${len} ML`
+         );
 
         // ⚠️ Lot fournisseur par ROULEAU
         await changeCols(newRollId, {
@@ -320,7 +315,7 @@ function removeRoll(idx) {
   const resteAff = (qtyLeft ?? 0).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
 
   return (
-    <div className="modal-overlay" onClick={() => onClose(false)}>
+    <div className="modal-overlay modal-top" onClick={() => onClose(false)}>
       <div className="modal" onClick={(e)=>e.stopPropagation()}>
         <h2>Réception — Item #{entryItem?.id}</h2>
         <div style={{fontSize:14,opacity:.8,marginBottom:8}}>
@@ -347,14 +342,6 @@ function removeRoll(idx) {
           >
             Produits (unités)
           </button>
-        </div>
-
-        <div className="ga-row">
-          <label className="ga-label">Type de réception</label>
-          <div className="ga-segment">
-            <button className={`seg ${mode==="rolls"?"active":""}`} onClick={()=>setMode("rolls")}>Rouleaux (ML)</button>
-            <button className={`seg ${mode==="pieces"?"active":""}`} onClick={()=>setMode("pieces")}>Produits (unités)</button>
-          </div>
         </div>
 
         <div className="grid" style={{display:"grid",gap:8}}>
