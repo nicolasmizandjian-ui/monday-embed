@@ -9,11 +9,22 @@ import {
   COL_CAT_CATALOG, COL_REF_TEXT_CAT, COL_ACTIVE_CAT, COL_UNIT_DEFAULT, COL_WIDTH_DEFAULT,
   COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_LINK_ROLL, COL_REF_TEXT_ROLL,
   COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
-  COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL,
+  COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL, COL_LAST_RECEIPT,
   COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
 } from "../config/mondayIds";
 
-
+function stripHtml(html) {
+  if (!html) return "";
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  return (div.textContent || div.innerText || "").replace(/\s+/g, " ").trim();
+}
+function formatQty(q) {
+  const n = parseFloat(String(q).replace(/\s/g, "").replace(",", "."));
+  if (Number.isNaN(n)) return q || "—";
+  return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+const RECEIPT_TOLERANCE = 0.005; // 0,5 %
 
 function ReceptionModal({
   open, onClose,
