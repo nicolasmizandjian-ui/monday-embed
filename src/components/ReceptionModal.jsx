@@ -180,15 +180,6 @@ function removeRoll(idx) {
   setRolls(prev => prev.filter((_, i) => i !== idx));
 }
 
-  // 2.1 Charger refs du catalogue selon catégorie
-  useEffect(() => {
-    if (!open) return;
-    if (!category) { setRefOptions([]); setRefSelected(null); return; }
-
-    // … (requête GraphQL boards/items_page sur le board Catalogue) …
-
-  }, [open, category]);
-
   // 2.2 Auto-préremplir unité/laize depuis la ref choisie (sans bloquer la saisie)
     useEffect(() => {
       if (refSelected) {
@@ -267,7 +258,7 @@ function removeRoll(idx) {
         await changeCols(newRollId, {
           [COL_LINK_PARENT_ROLL]: { item_ids: [entryItem.id] },
           [COL_SUPPLIER_ROLL]: (supplierTxt || entryItem.supplier || "").trim(),
-          [COL_CAT_ROLL]: category || "",
+          [COL_CAT_ROLL]: (refSelected?.categorie || category || ""),
           [COL_REF_TEXT_ROLL]: refSelected?.ref_sonefi || "",
           [COL_LENGTH_ROLL]: len,
           [COL_WIDTH_ROLL]: parseFloat(r.widthMm || widthMm) || null,
