@@ -4,10 +4,9 @@ import mondaySdk from "monday-sdk-js";
 const monday = mondaySdk();
 
 import {
-  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, CATALOG_BOARD_ID,
+  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, 
   COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT, COL_ROLLS_LINK, COL_LOCK_RECEIPT,
-  COL_CAT_CATALOG, COL_REF_TEXT_CAT, COL_ACTIVE_CAT, COL_UNIT_DEFAULT, COL_WIDTH_DEFAULT,
-  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_LINK_ROLL, COL_REF_TEXT_ROLL,
+  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_TEXT_ROLL,
   COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
   COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL, COL_LAST_RECEIPT,
   COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
@@ -34,7 +33,51 @@ function ReceptionModal({
   const [bl, setBl] = useState("");
   const [vendorLot, setVendorLot] = useState("");
   const [category, setCategory] = useState("");
-  const [refOptions, setRefOptions] = useState([]); // [{id, name, refText, unitDefault, widthDefault}]
+  // états catalogue
+  const [catalog, setCatalog] = useState([]);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [refOptions, setRefOptions] = useState([]);
+
+  // fournisseur visible/éditable
+  const [supplier, setSupplier] = useState(entryItem?.supplier || "");
+  const [supplierOptions, setSupplierOptions] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/catalog_with_suppliers.json")
+      .then(r => r.json())
+      .then((rows) => {
+        if (!alive) return;
+        setCatalog(rows);
+
+        // catégories actives
+        const cats = Array.from(new Set(
+          rows
+            .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"))
+            .map(r => r.categorie)
+            .filter(Boolean)
+        )).sort((a,b)=>String(a).localeCompare(String(b), "fr", {sensitivity:"base"}));
+        setCategoryOptions(cats);
+
+        // suggestions de fournisseurs (depuis le sheet)
+        const sup = Array.from(new Set(
+          rows.map(r => (r.supplier_default || "").trim()).filter(Boolean)
+        )).sort((a,b)=>a.localeCompare(b, "fr", {sensitivity:"base"}));
+        setSupplierOptions(prev => Array.from(new Set([...(prev||[]), ...sup])));
+      })
+      .catch(console.error);
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+  if (!category) { setRefOptions([]); return; }
+  const rows = catalog
+    .filter(r => String(r.categorie).trim() === String(category).trim())
+    .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"));
+  setRefOptions(rows);
+}, [category, catalog]);
+
+
   const [refSelected, setRefSelected] = useState(null);
   const [unit, setUnit] = useState(entryItem?.unit || "ML"); // recopie unité de la ligne
   const [widthMm, setWidthMm] = useState(entryItem?.widthMm || "");
@@ -70,6 +113,13 @@ const sumRolls = useMemo(
   [rolls]
 );
 
+function onPickRef(refRow) {
+  setRefSelected(refRow);
+  if (refRow?.unite_def) setUnit(refRow.unite_def);           // "ML", "UNITE", ...
+  if (refRow?.laize_mm != null) setWidthMm(refRow.laize_mm);   // nombre (mm)
+  if (refRow?.supplier_default) setSupplierTxt(refRow.supplier_default); // remplit le fournisseur
+}
+
 // 6) Helpers pour la table des rouleaux
 function updateRoll(idx, patch) {
   setRolls(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
@@ -88,54 +138,20 @@ function removeRoll(idx) {
   useEffect(() => {
     if (!open) return;
     if (!category) { setRefOptions([]); setRefSelected(null); return; }
-    (async () => {
-      try {
-        const q = `
-          query ($boardId: ID!, $limit: Int!) {
-            boards(ids: [$boardId]) {
-              items_page(limit: $limit) {
-                items {
-                  id
-                  name
-                  column_values {
-                    id
-                    text
-                  }
-                }
-              }
-            }
-          }
-        `;
-        const res = await monday.api(q, { variables: { boardId: String(CATALOG_BOARD_ID), limit: 500 }});
-        const raw = res?.data?.boards?.[0]?.items_page?.items ?? [];
-        const rows = raw.map(it => {
-          const map = Object.fromEntries((it.column_values||[]).map(cv => [cv.id, cv.text]));
-          return {
-            id: it.id,
-            name: it.name,
-            cat: (map[COL_CAT_CATALOG]||"").trim(),
-            refText: (map[COL_REF_TEXT_CAT]||"").trim(),
-            active: (map[COL_ACTIVE_CAT]||"").toLowerCase().includes("oui") || (map[COL_ACTIVE_CAT]||"").toLowerCase().includes("actif"),
-            unitDefault: (map[COL_UNIT_DEFAULT]||"").trim(),
-            widthDefault: parseFloat((map[COL_WIDTH_DEFAULT]||"").replace(",", "."))
-          };
-        }).filter(r => r.active && r.cat === category);
-        setRefOptions(rows);
-        setRefSelected(null);
-      } catch (e) {
-        setErr("Erreur chargement catalogue : " + (e?.message||"inconnue"));
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // … (requête GraphQL boards/items_page sur le board Catalogue) …
+
   }, [open, category]);
 
   // 2.2 Auto-préremplir unité/laize depuis la ref choisie (sans bloquer la saisie)
-  useEffect(() => {
-    if (refSelected) {
-      if (refSelected.unitDefault && !entryItem?.unit) setUnit(refSelected.unitDefault);
-      if (refSelected.widthDefault && !entryItem?.widthMm) setWidthMm(refSelected.widthDefault);
-    }
-  }, [refSelected, entryItem]);
+    useEffect(() => {
+      if (refSelected) {
+        if (refSelected.unite_def && !entryItem?.unit) setUnit(refSelected.unite_def);
+        if (refSelected.laize_mm != null && !entryItem?.widthMm) setWidthMm(refSelected.laize_mm);
+        if (refSelected.supplier_default) setSupplierTxt(refSelected.supplier_default);
+      }
+    }, [refSelected, entryItem]);
+
 
   async function handleValidate() {
   try {
@@ -198,15 +214,15 @@ function removeRoll(idx) {
          const newRollId = await createItemInGroup(
             ROLLS_BOARD_ID,
              ROLLS_GROUP_ID,
-           `${refSelected?.name || "Rouleau"} — ${len} ML`
+           `${refSelected?.ref_sonefi || "Rouleau"} — ${len} ML`
          );
 
         // ⚠️ Lot fournisseur par ROULEAU
         await changeCols(newRollId, {
           [COL_LINK_PARENT_ROLL]: { item_ids: [entryItem.id] },
-          [COL_SUPPLIER_ROLL]: entryItem.supplier || "",
+          [COL_SUPPLIER_ROLL]: (supplierTxt || entryItem.supplier || "").trim(),
           [COL_CAT_ROLL]: category || "",
-          [COL_REF_TEXT_ROLL]: refSelected?.name || "",
+          [COL_REF_TEXT_ROLL]: refSelected?.ref_sonefi || "",
           [COL_LENGTH_ROLL]: len,
           [COL_WIDTH_ROLL]: parseFloat(r.widthMm || widthMm) || null,
           [COL_UNIT_ROLL]: "ML",
@@ -362,26 +378,31 @@ function removeRoll(idx) {
             <label>📚 Catégorie</label>
             <select className="ga-input" value={category} onChange={e=>setCategory(e.target.value)}>
               <option value="">— Choisir —</option>
-              <option>Feutre synthétique</option>
-              <option>Feutre laine</option>
-              <option>Aiguilleté filtration</option>
-              <option>Maille polyamide</option>
-              <option>Accessoires</option>
-              <option>Emballages</option>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
+
           </div>
 
           <div>
             <label>🧾 Réf SONEFI</label>
-            <select className="ga-input" value={refSelected?.id||""} onChange={e=>{
-              const found = refOptions.find(o=>o.id===e.target.value);
-              setRefSelected(found||null);
-            }}>
-              <option value="">— Sélectionner ({refOptions.length}) —</option>
-              {refOptions.map(o=>(
-                <option key={o.id} value={o.id}>{o.refText || o.name}</option>
-              ))}
-            </select>
+              <select
+                className="ga-input"
+                value={refSelected?.ref_sonefi || ""}
+                onChange={(e) => {
+                  const found = refOptions.find(o => String(o.ref_sonefi) === e.target.value);
+                  onPickRef(found || null);
+                }}
+              >
+                <option value="">— Sélectionner ({refOptions.length}) —</option>
+                {refOptions.map((o) => (
+                  <option key={o.ref_sonefi} value={o.ref_sonefi}>
+                    {o.ref_sonefi}{o.ref_sellsy ? ` — ${o.ref_sellsy}` : ""}
+                  </option>
+                ))}
+              </select>
+
           </div>
 
           <div>
