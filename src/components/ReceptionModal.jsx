@@ -46,37 +46,83 @@ function ReceptionModal({
     let alive = true;
     fetch("/catalog_with_suppliers.json")
       .then(r => r.json())
-      .then((rows) => {
-        if (!alive) return;
-        setCatalog(rows);
+      .then((rowsRaw) => {
+      if (!alive) return;
 
-        // catégories actives
-        const cats = Array.from(new Set(
+      // Helpers de nettoyage
+      const safe = (v) => (v == null ? "" : String(v).trim());
+      const isJunkCat = (s) => {
+        const x = safe(s).toLowerCase();
+        if (!x) return true;
+        if (x === "nan" || x === "categorie" || x === "catégorie" || x === "nombre de possibilites") return true;
+        if (/^\d+$/.test(x)) return true; // 109, 123…
+        return false;
+      };
+      const pretty = (s) => {
+        // FEUTRE_LAINE -> Feutre laine
+        const t = safe(s).replace(/[_]+/g, " ").toLowerCase();
+        return t.replace(/\b\p{L}/gu, (m) => m.toUpperCase());
+      };
+
+      // 1) Normaliser les lignes utiles
+      const rows = rowsRaw
+        .map((r) => ({
+          categorie: safe(r.categorie),
+          ref_sonefi: safe(r.ref_sonefi),
+          ref_sellsy: safe(r.ref_sellsy),
+          unite_def: safe(r.unite_def).toUpperCase(),
+          laize_mm: r.laize_mm ?? "",
+          supplier_default: safe(r.supplier_default),
+          actif: safe(r.actif),
+        }))
+        .filter((r) => r.ref_sonefi && r.categorie && !isJunkCat(r.categorie));
+
+      setCatalog(rows);
+
+      // 2) Catégories uniques "propres"
+      const cats = Array.from(
+        new Set(
           rows
-            .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"))
-            .map(r => r.categorie)
-            .filter(Boolean)
-        )).sort((a,b)=>String(a).localeCompare(String(b), "fr", {sensitivity:"base"}));
-        setCategoryOptions(cats);
+            .filter((r) => !r.actif || r.actif.toLowerCase().includes("oui"))
+            .map((r) => r.categorie)
+        )
+      )
+        .filter((c) => !isJunkCat(c))
+        .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
 
-        // suggestions de fournisseurs (depuis le sheet)
-        const sup = Array.from(new Set(
-          rows.map(r => (r.supplier_default || "").trim()).filter(Boolean)
-        )).sort((a,b)=>a.localeCompare(b, "fr", {sensitivity:"base"}));
-        setSupplierOptions(prev => Array.from(new Set([...(prev||[]), ...sup])));
-      })
+      // On prépare des étiquettes jolies pour l’affichage
+      setCategoryOptions(cats.map((c) => pretty(c)));
+
+      // 3) Suggestions fournisseurs depuis le tableau
+      const sup = Array.from(new Set(rows.map((r) => r.supplier_default).filter(Boolean)))
+        .sort((a, b) => a.localeCompare(b, "fr", { sensitivity: "base" }));
+      setSupplierOptions((prev) => Array.from(new Set([...(prev || []), ...sup])));
+    })
       .catch(console.error);
     return () => { alive = false; };
   }, []);
 
-  useEffect(() => {
-  if (!category) { setRefOptions([]); return; }
-  const rows = catalog
-    .filter(r => String(r.categorie).trim() === String(category).trim())
-    .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"));
-  setRefOptions(rows);
-}, [category, catalog]);
+    useEffect(() => {
+      if (!category) { setRefOptions([]); return; }
 
+      // Normaliser pour comparer proprement (sans accents, casse, ponctuation)
+      const norm = (s) =>
+        String(s || "")
+          .normalize("NFKD")
+          .replace(/[\u0300-\u036f]/g, "") // accents
+          .replace(/[_\W]+/g, " ")         // underscores & ponctuation -> espace
+          .trim()
+          .toLowerCase();
+
+      const sel = norm(category);
+
+      // On retrouve la "vraie" catégorie correspondante dans le catalogue
+      const rows = catalog
+        .filter((r) => norm(r.categorie) === sel)
+        .filter((r) => !r.actif || r.actif.toLowerCase().includes("oui"));
+
+      setRefOptions(rows);
+    }, [category, catalog]);
 
   const [refSelected, setRefSelected] = useState(null);
   const [unit, setUnit] = useState(entryItem?.unit || "ML"); // recopie unité de la ligne
