@@ -4,10 +4,9 @@ import mondaySdk from "monday-sdk-js";
 const monday = mondaySdk();
 
 import {
-  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, CATALOG_BOARD_ID,
+  ENTRY_BOARD_ID, ROLLS_BOARD_ID, ROLLS_GROUP_ID, 
   COL_UNIT_ENTRY, COL_WIDTH_ENTRY, COL_QTY_RCVD_CUM, COL_ROLLS_COUNT, COL_ROLLS_LINK, COL_LOCK_RECEIPT,
-  COL_CAT_CATALOG, COL_REF_TEXT_CAT, COL_ACTIVE_CAT, COL_UNIT_DEFAULT, COL_WIDTH_DEFAULT,
-  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_LINK_ROLL, COL_REF_TEXT_ROLL,
+  COL_LINK_PARENT_ROLL, COL_SUPPLIER_ROLL, COL_CAT_ROLL, COL_REF_TEXT_ROLL,
   COL_WIDTH_ROLL, COL_LENGTH_ROLL, COL_UNIT_ROLL, COL_VENDOR_LOT_ROLL, COL_BATCH_ROLL, COL_DATE_IN_ROLL,
   COL_LOC_ROLL, COL_QUALITY_ROLL, COL_QR_ROLL, COL_LAST_RECEIPT,
   COL_JOURNAL_DATE, COL_JOURNAL_BL, COL_JOURNAL_LOT, COL_JOURNAL_QTY, COL_JOURNAL_UNIT, COL_JOURNAL_NBROLL, COL_JOURNAL_USER
@@ -139,45 +138,9 @@ function removeRoll(idx) {
   useEffect(() => {
     if (!open) return;
     if (!category) { setRefOptions([]); setRefSelected(null); return; }
-    (async () => {
-      try {
-        const q = `
-          query ($boardId: ID!, $limit: Int!) {
-            boards(ids: [$boardId]) {
-              items_page(limit: $limit) {
-                items {
-                  id
-                  name
-                  column_values {
-                    id
-                    text
-                  }
-                }
-              }
-            }
-          }
-        `;
-        const res = await monday.api(q, { variables: { boardId: String(CATALOG_BOARD_ID), limit: 500 }});
-        const raw = res?.data?.boards?.[0]?.items_page?.items ?? [];
-        const rows = raw.map(it => {
-          const map = Object.fromEntries((it.column_values||[]).map(cv => [cv.id, cv.text]));
-          return {
-            id: it.id,
-            name: it.name,
-            cat: (map[COL_CAT_CATALOG]||"").trim(),
-            refText: (map[COL_REF_TEXT_CAT]||"").trim(),
-            active: (map[COL_ACTIVE_CAT]||"").toLowerCase().includes("oui") || (map[COL_ACTIVE_CAT]||"").toLowerCase().includes("actif"),
-            unitDefault: (map[COL_UNIT_DEFAULT]||"").trim(),
-            widthDefault: parseFloat((map[COL_WIDTH_DEFAULT]||"").replace(",", "."))
-          };
-        }).filter(r => r.active && r.cat === category);
-        setRefOptions(rows);
-        setRefSelected(null);
-      } catch (e) {
-        setErr("Erreur chargement catalogue : " + (e?.message||"inconnue"));
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // … (requête GraphQL boards/items_page sur le board Catalogue) …
+
   }, [open, category]);
 
   // 2.2 Auto-préremplir unité/laize depuis la ref choisie (sans bloquer la saisie)
@@ -251,15 +214,15 @@ function removeRoll(idx) {
          const newRollId = await createItemInGroup(
             ROLLS_BOARD_ID,
              ROLLS_GROUP_ID,
-           `${refSelected?.name || "Rouleau"} — ${len} ML`
+           `${refSelected?.ref_sonefi || "Rouleau"} — ${len} ML`
          );
 
         // ⚠️ Lot fournisseur par ROULEAU
         await changeCols(newRollId, {
           [COL_LINK_PARENT_ROLL]: { item_ids: [entryItem.id] },
-          [COL_SUPPLIER_ROLL]: entryItem.supplier || "",
+          [COL_SUPPLIER_ROLL]: (supplierTxt || entryItem.supplier || "").trim(),
           [COL_CAT_ROLL]: category || "",
-          [COL_REF_TEXT_ROLL]: refSelected?.name || "",
+          [COL_REF_TEXT_ROLL]: refSelected?.ref_sonefi || "",
           [COL_LENGTH_ROLL]: len,
           [COL_WIDTH_ROLL]: parseFloat(r.widthMm || widthMm) || null,
           [COL_UNIT_ROLL]: "ML",
