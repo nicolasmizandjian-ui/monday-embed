@@ -34,7 +34,51 @@ function ReceptionModal({
   const [bl, setBl] = useState("");
   const [vendorLot, setVendorLot] = useState("");
   const [category, setCategory] = useState("");
-  const [refOptions, setRefOptions] = useState([]); // [{id, name, refText, unitDefault, widthDefault}]
+  // états catalogue
+  const [catalog, setCatalog] = useState([]);
+  const [categoryOptions, setCategoryOptions] = useState([]);
+  const [refOptions, setRefOptions] = useState([]);
+
+  // fournisseur visible/éditable
+  const [supplier, setSupplier] = useState(entryItem?.supplier || "");
+  const [supplierOptions, setSupplierOptions] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/catalog_with_suppliers.json")
+      .then(r => r.json())
+      .then((rows) => {
+        if (!alive) return;
+        setCatalog(rows);
+
+        // catégories actives
+        const cats = Array.from(new Set(
+          rows
+            .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"))
+            .map(r => r.categorie)
+            .filter(Boolean)
+        )).sort((a,b)=>String(a).localeCompare(String(b), "fr", {sensitivity:"base"}));
+        setCategoryOptions(cats);
+
+        // suggestions de fournisseurs (depuis le sheet)
+        const sup = Array.from(new Set(
+          rows.map(r => (r.supplier_default || "").trim()).filter(Boolean)
+        )).sort((a,b)=>a.localeCompare(b, "fr", {sensitivity:"base"}));
+        setSupplierOptions(prev => Array.from(new Set([...(prev||[]), ...sup])));
+      })
+      .catch(console.error);
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+  if (!category) { setRefOptions([]); return; }
+  const rows = catalog
+    .filter(r => String(r.categorie).trim() === String(category).trim())
+    .filter(r => !r.actif || String(r.actif).toLowerCase().includes("oui"));
+  setRefOptions(rows);
+}, [category, catalog]);
+
+
   const [refSelected, setRefSelected] = useState(null);
   const [unit, setUnit] = useState(entryItem?.unit || "ML"); // recopie unité de la ligne
   const [widthMm, setWidthMm] = useState(entryItem?.widthMm || "");
@@ -69,6 +113,13 @@ const sumRolls = useMemo(
   () => rolls.reduce((s, r) => s + (parseFloat(r.length) || 0), 0),
   [rolls]
 );
+
+function onPickRef(refRow) {
+  setRefSelected(refRow);
+  if (refRow?.unite_def) setUnit(refRow.unite_def);           // "ML", "UNITE", ...
+  if (refRow?.laize_mm != null) setWidthMm(refRow.laize_mm);   // nombre (mm)
+  if (refRow?.supplier_default) setSupplierTxt(refRow.supplier_default); // remplit le fournisseur
+}
 
 // 6) Helpers pour la table des rouleaux
 function updateRoll(idx, patch) {
@@ -130,12 +181,14 @@ function removeRoll(idx) {
   }, [open, category]);
 
   // 2.2 Auto-préremplir unité/laize depuis la ref choisie (sans bloquer la saisie)
-  useEffect(() => {
-    if (refSelected) {
-      if (refSelected.unitDefault && !entryItem?.unit) setUnit(refSelected.unitDefault);
-      if (refSelected.widthDefault && !entryItem?.widthMm) setWidthMm(refSelected.widthDefault);
-    }
-  }, [refSelected, entryItem]);
+    useEffect(() => {
+      if (refSelected) {
+        if (refSelected.unite_def && !entryItem?.unit) setUnit(refSelected.unite_def);
+        if (refSelected.laize_mm != null && !entryItem?.widthMm) setWidthMm(refSelected.laize_mm);
+        if (refSelected.supplier_default) setSupplierTxt(refSelected.supplier_default);
+      }
+    }, [refSelected, entryItem]);
+
 
   async function handleValidate() {
   try {
@@ -362,26 +415,31 @@ function removeRoll(idx) {
             <label>📚 Catégorie</label>
             <select className="ga-input" value={category} onChange={e=>setCategory(e.target.value)}>
               <option value="">— Choisir —</option>
-              <option>Feutre synthétique</option>
-              <option>Feutre laine</option>
-              <option>Aiguilleté filtration</option>
-              <option>Maille polyamide</option>
-              <option>Accessoires</option>
-              <option>Emballages</option>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
+
           </div>
 
           <div>
             <label>🧾 Réf SONEFI</label>
-            <select className="ga-input" value={refSelected?.id||""} onChange={e=>{
-              const found = refOptions.find(o=>o.id===e.target.value);
-              setRefSelected(found||null);
-            }}>
-              <option value="">— Sélectionner ({refOptions.length}) —</option>
-              {refOptions.map(o=>(
-                <option key={o.id} value={o.id}>{o.refText || o.name}</option>
-              ))}
-            </select>
+              <select
+                className="ga-input"
+                value={refSelected?.ref_sonefi || ""}
+                onChange={(e) => {
+                  const found = refOptions.find(o => String(o.ref_sonefi) === e.target.value);
+                  onPickRef(found || null);
+                }}
+              >
+                <option value="">— Sélectionner ({refOptions.length}) —</option>
+                {refOptions.map((o) => (
+                  <option key={o.ref_sonefi} value={o.ref_sonefi}>
+                    {o.ref_sonefi}{o.ref_sellsy ? ` — ${o.ref_sellsy}` : ""}
+                  </option>
+                ))}
+              </select>
+
           </div>
 
           <div>
