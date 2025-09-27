@@ -42,15 +42,47 @@ function ReceptionModal({
   const [loc, setLoc] = useState("");
   const [qualityDefault, setQualityDefault] = useState("OK");
 
-  // ML : liste de rouleaux (longueur + laize + qualité + obs)
-  const [rolls, setRolls] = useState([]);
-  const [piecesQty, setPiecesQty] = useState(0); // pour UNITE
+// --- états existants (dateIn, bl, vendorLot global éventuel, category, refOptions, refSelected, unit, widthMm, supplierTxt, loc, qualityDefault, etc.) ---
 
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
+// 1) Choix du mode (produits vs rouleaux)
+const [mode, setMode] = useState(entryItem?.unit === "ML" ? "rolls" : "pieces");
+const isML = mode === "rolls";
 
-  const qtyLeft = Math.max(0, (entryItem?.qtyCommanded || 0) - (entryItem?.qtyReceivedCum || 0));
-  const sumRolls = useMemo(() => rolls.reduce((s, r) => s + (parseFloat(r.length)||0), 0), [rolls]);
+// 2) Liste des rouleaux (UNIQUE déclaration)
+const [rolls, setRolls] = useState([
+  { length: "", widthMm: entryItem?.widthMm || "", vendorLot: "", quality: "OK", loc: "", notes: "" },
+]);
+
+// 3) Pièces (pour le mode produits)
+const [piecesQty, setPiecesQty] = useState(0);
+
+// 4) Loading / Erreur
+const [loading, setLoading] = useState(false);
+const [err, setErr] = useState("");
+
+// 5) Calculs dérivés
+const qtyLeft = Math.max(
+    0,
+    (parseFloat(entryItem?.qtyCommanded) || 0) - (parseFloat(entryItem?.qtyReceivedCum) || 0)
+   );
+const sumRolls = useMemo(
+  () => rolls.reduce((s, r) => s + (parseFloat(r.length) || 0), 0),
+  [rolls]
+);
+
+// 6) Helpers pour la table des rouleaux
+function updateRoll(idx, patch) {
+  setRolls(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+}
+function addRoll() {
+  setRolls(prev => [
+    ...prev,
+    { length: "", widthMm: entryItem?.widthMm || "", vendorLot: "", quality: "OK", loc: "", notes: "" },
+  ]);
+}
+function removeRoll(idx) {
+  setRolls(prev => prev.filter((_, i) => i !== idx));
+}
 
   // 2.1 Charger refs du catalogue selon catégorie
   useEffect(() => {
@@ -105,144 +137,116 @@ function ReceptionModal({
     }
   }, [refSelected, entryItem]);
 
-  function addRollRow() {
-    setRolls(prev => [...prev, { length: 0, widthMm: widthMm || 0, quality: qualityDefault, notes: "" }]);
-  }
-  function setRollField(i, field, val) {
-    setRolls(prev => prev.map((r, idx) => idx===i ? { ...r, [field]: val } : r));
-  }
-  function removeRollRow(i) {
-    setRolls(prev => prev.filter((_, idx) => idx!==i));
-  }
-  function autoDistribute(total, n) {
-    const t = parseFloat(total); const count = parseInt(n,10);
-    if (!t || !count || count<=0) return;
-    const base = Math.floor((t/count)*1000)/1000;
-    const arr = Array.from({length: count}, (_,i) => ({ length: base, widthMm: widthMm||0, quality: qualityDefault, notes:"" }));
-    // Ajuster le dernier avec l'arrondi
-    arr[count-1].length = Math.round((t - base*(count-1))*1000)/1000;
-    setRolls(arr);
-  }
-
   async function handleValidate() {
-    try {
-      setErr("");
-      // validations
-      if (!dateIn) throw new Error("Date obligatoire.");
-      if (!bl) throw new Error("N° BL obligatoire.");
-      if (!category) throw new Error("Catégorie obligatoire.");
-      if (!refSelected) throw new Error("Réf SONEFI obligatoire (choisis dans la liste).");
+  try {
+    setErr("");
 
-      if (unit === "ML") {
-        if (!vendorLot || vendorLot.trim()==="") {
-          // autorisé mais en quarantaine
-        }
-        if (rolls.length===0) throw new Error("Ajoute au moins un rouleau.");
-        if (!widthMm) throw new Error("Laize obligatoire.");
-        const sum = sumRolls;
-        const maxAllowed = qtyLeft*(1+RECEIPT_TOLERANCE);
-        if (sum > maxAllowed) {
-          throw new Error(`Somme des longueurs (${sum}) > reste autorisé (${qtyLeft} ± tolérance).`);
-        }
-      } else if (unit === "UNITE") {
-        if (!piecesQty || piecesQty<=0) throw new Error("Quantité (pièces) > 0 requise.");
-        const maxAllowed = qtyLeft*(1+RECEIPT_TOLERANCE);
-        if (piecesQty > maxAllowed) throw new Error(`Qté > reste autorisé (${qtyLeft} ± tolérance).`);
+    // validations communes
+    if (!dateIn) throw new Error("Date obligatoire.");
+    if (!bl) throw new Error("N° BL obligatoire.");
+    if (!category) throw new Error("Catégorie obligatoire.");
+    if (!refSelected) throw new Error("Réf SONEFI obligatoire (choisis dans la liste).");
+
+    // qtyLeft = quantité restante autorisée sur la ligne (tu l'as déjà calculée)
+    // RECEIPT_TOLERANCE doit être défini en haut du fichier (ex: 0.005)
+
+    if (mode === "rolls") {
+      // --- Mode ROULEAUX (ML) ---
+      if (rolls.length === 0) throw new Error("Ajoute au moins un rouleau.");
+      if (!widthMm) throw new Error("Laize obligatoire.");
+
+      const sum = rolls.reduce((s, r) => s + (parseFloat(r.length) || 0), 0);
+      const maxAllowed = qtyLeft * (1 + RECEIPT_TOLERANCE);
+      if (sum > maxAllowed) {
+        throw new Error(`Somme des longueurs (${sum}) > reste autorisé (${qtyLeft} ± tolérance).`);
       }
+      const emptyLots = rolls
+    .map((r, i) => ({ i, lot: (r.vendorLot || "").trim() }))
+    .filter(x => !x.lot);
 
-      setLoading(true);
-
-      // 1) Verrouiller la ligne d’achat
-      await changeCols(entryItem.id, {
-        [COL_LOCK_RECEIPT]: { label: "Oui" }
-      });
-
-      let createdRollIds = [];
-      let qtyReceived = 0;
-
-      if (unit === "ML") {
-        // 2) Créer chaque rouleau dans board Stock Rouleaux
-        for (let i=0;i<rolls.length;i++){
-          const r = rolls[i];
-          const rollName = `Rouleau — ${stripHtml(entryItem.product).slice(0,50)} — ${r.length} ML`;
-          const newItemId = await createItemInGroup(ROLLS_BOARD_ID, ROLLS_GROUP_ID, rollName);
-
-          // batch interne
-          const batch = makeBatch(entryItem.id, i+1);
-
-          // qualité : si lot vide => quarantaine forcée
-          const qual = (vendorLot && vendorLot.trim()!=="") ? (r.quality||"OK") : "Quarantaine";
-
-          await changeCols(newItemId, {
-            [COL_LINK_PARENT_ROLL]: { item_ids: [parseInt(entryItem.id,10)], board_id: parseInt(ENTRY_BOARD_ID,10) },
-            [COL_SUPPLIER_ROLL]: supplierTxt || "",
-            [COL_CAT_ROLL]: { label: category },
-            [COL_REF_LINK_ROLL]: { item_ids: [parseInt(refSelected.id,10)], board_id: parseInt(CATALOG_BOARD_ID,10) },
-            [COL_REF_TEXT_ROLL]: refSelected.refText || refSelected.name || "",
-            [COL_WIDTH_ROLL]: r.widthMm || widthMm || "",
-            [COL_LENGTH_ROLL]: r.length || "",
-            [COL_UNIT_ROLL]: unit,
-            [COL_VENDOR_LOT_ROLL]: vendorLot || "",
-            [COL_BATCH_ROLL]: batch,
-            [COL_DATE_IN_ROLL]: dateIn,
-            [COL_LOC_ROLL]: loc || "",
-            [COL_QUALITY_ROLL]: { label: qual },
-          });
-
-          // QR: générer PNG & uploader (placeholder, à brancher ensuite)
-          // const qrBlob = await generateQrPngBlob(makeItemUrl(newItemId));
-          // await uploadFileToColumn(newItemId, COL_QR_ROLL, qrBlob, `QR-${newItemId}.png`);
-
-          createdRollIds.push(newItemId);
-          qtyReceived += (parseFloat(r.length)||0);
-        }
-      } else if (unit === "UNITE") {
-        qtyReceived = piecesQty;
-      }
-
-      // 3) Mettre à jour la ligne d’achat (cumul, date, nb rouleaux, liens…)
-      const newCum = (entryItem.qtyReceivedCum||0) + qtyReceived;
-      const nbRollsAdd = (unit === "ML") ? createdRollIds.length : 0;
-
-      const parentUpdates = {
-        [COL_QTY_RCVD_CUM]: newCum.toString().replace(".", ","),
-        [COL_LAST_RECEIPT]: dateIn,
-      };
-      if (nbRollsAdd>0) parentUpdates[COL_ROLLS_COUNT] = ((entryItem.nbRolls||0)+nbRollsAdd).toString();
-
-      await changeCols(entryItem.id, parentUpdates);
-
-      // 3.b Lier rouleaux créés dans la colonne Connect (si ML)
-      if (createdRollIds.length>0) {
-        await appendLinks(entryItem.id, COL_ROLLS_LINK, createdRollIds.map(id => parseInt(id,10)), ROLLS_BOARD_ID);
-      }
-
-      // 4) Journal (subitem)
-      const journalName = `Réception du ${dateIn}`;
-      const journalId = await createSubitem(entryItem.id, journalName);
-      await changeCols(journalId, {
-        [COL_JOURNAL_DATE]: dateIn,
-        [COL_JOURNAL_BL]: bl,
-        [COL_JOURNAL_LOT]: vendorLot || "",
-        [COL_JOURNAL_QTY]: (unit==="ML" ? qtyReceived : piecesQty).toString().replace(".", ","),
-        [COL_JOURNAL_UNIT]: unit,
-        [COL_JOURNAL_NBROLL]: (unit==="ML" ? createdRollIds.length : 0).toString(),
-        [COL_JOURNAL_USER]: "App", // tu peux remplacer par le nom renvoyé par monday.get("context")
-      });
-
-      // 5) Déverrouiller
-      await changeCols(entryItem.id, { [COL_LOCK_RECEIPT]: { label: "Non" } });
-
-      alert("Réception enregistrée ✅");
-      onClose(true); // refresh parent
-    } catch (e) {
-      setErr(e?.message || "Erreur inconnue");
-      // déverrouiller si verrou posé
-      try { await changeCols(entryItem.id, { [COL_LOCK_RECEIPT]: { label: "Non" } }); } catch {}
-    } finally {
-      setLoading(false);
-    }
+  if (emptyLots.length) {
+    throw new Error(
+      `Lot fournisseur requis pour chaque rouleau (manquant: ${emptyLots.map(x => `#${x.i + 1}`).join(", ")})`
+    );
   }
+    } else {
+      // --- Mode PRODUITS (unités) ---
+      if (!piecesQty || piecesQty <= 0) throw new Error("Quantité (pièces) > 0 requise.");
+      const maxAllowed = qtyLeft * (1 + RECEIPT_TOLERANCE);
+      if (piecesQty > maxAllowed) {
+        throw new Error(`Qté pièces > reste autorisé (${qtyLeft} ± tolérance).`);
+      }
+    }
+
+    setLoading(true);
+
+    // 1) Verrouiller la ligne d’achat
+    await changeCols(entryItem.id, {
+      [COL_LOCK_RECEIPT]: { label: "Oui" },
+    });
+
+    let createdRollIds = [];
+    let qtyReceived = 0;
+
+    if (mode === "rolls") {
+      // 2) Créer chaque rouleau dans le board Stock Rouleaux
+      for (let i = 0; i < rolls.length; i++) {
+        const r = rolls[i];
+        const len = parseFloat(r.length) || 0;
+        if (len <= 0) continue;
+
+         const newRollId = await createItemInGroup(
+            ROLLS_BOARD_ID,
+             ROLLS_GROUP_ID,
+           `${refSelected?.name || "Rouleau"} — ${len} ML`
+         );
+
+        // ⚠️ Lot fournisseur par ROULEAU
+        await changeCols(newRollId, {
+          [COL_LINK_PARENT_ROLL]: { item_ids: [entryItem.id] },
+          [COL_SUPPLIER_ROLL]: entryItem.supplier || "",
+          [COL_CAT_ROLL]: category || "",
+          [COL_REF_TEXT_ROLL]: refSelected?.name || "",
+          [COL_LENGTH_ROLL]: len,
+          [COL_WIDTH_ROLL]: parseFloat(r.widthMm || widthMm) || null,
+          [COL_UNIT_ROLL]: "ML",
+          [COL_VENDOR_LOT_ROLL]: (r.vendorLot || "").trim(), // <<< ici le lot par rouleau
+          [COL_DATE_IN_ROLL]: dateIn,
+          [COL_LOC_ROLL]: (r.loc || loc || "").trim(),
+          [COL_QUALITY_ROLL]: r.quality || qualityDefault || "OK",
+          // ... autres colonnes si besoin (QR, notes, liens vers Catalogue, etc.)
+        });
+
+        createdRollIds.push(newRollId);
+        qtyReceived += len;
+      }
+    } else {
+      // Mode PRODUITS : pas d'items rouleaux; on incrémente juste le cumul
+      qtyReceived = parseFloat(piecesQty) || 0;
+    }
+
+    // 3) Mettre à jour le cumul reçu sur la ligne d’achat
+    const prevCum = parseFloat(String(entryItem.qtyReceivedCum || "0").replace(",", ".")) || 0;
+    const newCum = prevCum + qtyReceived;
+
+    await changeCols(entryItem.id, {
+      [COL_QTY_RCVD_CUM]: newCum,
+      [COL_ROLLS_COUNT]: mode === "rolls" ? (parseInt(entryItem.nbRolls || 0, 10) + createdRollIds.length) : (entryItem.nbRolls || 0),
+      [COL_LAST_RECEIPT]: dateIn,
+    });
+
+    // 4) Journal (si tu as des subitems)
+    // await appendJournalLine({ date: dateIn, bl, lot: mode==="rolls" ? "Voir rouleaux" : (vendorLot || ""), qty: qtyReceived, unit: mode==="rolls" ? "ML" : "UNITE", nbRolls: createdRollIds.length });
+
+    // 5) Déverrouiller (ou pas, selon ton process), fermer la modale et rafraîchir
+    await changeCols(entryItem.id, { [COL_LOCK_RECEIPT]: { label: "Non" } });
+    onClose(true);
+  } catch (e) {
+    setErr(e?.message || "Erreur inconnue");
+  } finally {
+    setLoading(false);
+  }
+}
 
   function makeBatch(parentId, seq) {
     const d = new Date(dateIn);
@@ -308,11 +312,10 @@ function ReceptionModal({
   // UI
   if (!open) return null;
 
-  const isML = unit === "ML";
   const resteAff = (qtyLeft ?? 0).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
 
   return (
-    <div className="modal-overlay" onClick={() => onClose(false)}>
+    <div className="modal-overlay modal-top" onClick={() => onClose(false)}>
       <div className="modal" onClick={(e)=>e.stopPropagation()}>
         <h2>Réception — Item #{entryItem?.id}</h2>
         <div style={{fontSize:14,opacity:.8,marginBottom:8}}>
@@ -320,6 +323,25 @@ function ReceptionModal({
           <div><b>Fournisseur :</b> {supplierTxt}</div>
           <div><b>Unité :</b> {unit} · <b>Commandé :</b> {formatQty(entryItem?.qtyCommanded)} · <b>Reçu :</b> {formatQty(entryItem?.qtyReceivedCum||0)} · <b>Reste :</b> {resteAff}</div>
           {isML && <div><b>Laize (mm) :</b> <input className="ga-input" style={{width:120}} value={widthMm} onChange={e=>setWidthMm(e.target.value)} /></div>}
+        </div>
+
+        {/* --- Toggle type de réception --- */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+          <span style={{ fontWeight: 600 }}>Type de réception :</span>
+          <button
+            type="button"
+            className={`ga-btn ${isML ? "" : "ghost"}`}
+            onClick={() => setMode("rolls")}
+          >
+            Rouleaux (ML)
+          </button>
+          <button
+            type="button"
+            className={`ga-btn ${!isML ? "" : "ghost"}`}
+            onClick={() => setMode("pieces")}
+          >
+            Produits (unités)
+          </button>
         </div>
 
         <div className="grid" style={{display:"grid",gap:8}}>
@@ -368,54 +390,49 @@ function ReceptionModal({
           </div>
         </div>
 
-        {isML ? (
+       {/* Section ROULEAUX (mode ML) */}
+        {isML && (
           <>
             <div className="ga-divider" />
+
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button className="ga-btn" onClick={addRollRow}>+ Ajouter rouleau</button>
-              <span>ou</span>
-              <button className="ga-btn ghost" onClick={()=>{
-                const totalStr = prompt("Total à répartir (ML) ?", String(qtyLeft||""));
-                const nStr = prompt("Nombre de rouleaux ?", "1");
-                autoDistribute(totalStr, nStr);
-              }}>Répartir automatiquement</button>
-              <div style={{marginLeft:"auto"}}><b>Total saisi :</b> {sumRolls.toLocaleString("fr-FR")} ML</div>
+              <button className="ga-btn" onClick={addRoll}>+ Ajouter un rouleau</button>
+              <div style={{marginLeft:"auto"}}>
+                <b>Total saisi :</b>{" "}
+                {rolls.reduce((s,r)=> s + (parseFloat(r.length)||0), 0).toLocaleString("fr-FR")} ML
+              </div>
             </div>
 
-            <div style={{maxHeight:220,overflow:"auto",marginTop:8,display:"grid",gap:6}}>
-              {rolls.map((r, i)=>(
-                <div key={i} className="ga-card pastel-grey" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:8,alignItems:"center"}}>
+            <div style={{maxHeight:260,overflow:"auto",marginTop:8,display:"grid",gap:8}}>
+              {rolls.map((r, idx)=>(
+                <div key={idx} className="ga-card pastel-grey" style={{display:"grid",gridTemplateColumns:"140px 140px 1fr 120px auto",gap:8,alignItems:"center"}}>
                   <div>
                     <label>Longueur (ML)</label>
-                    <input className="ga-input" value={r.length} onChange={e=>setRollField(i,"length",e.target.value)} />
+                    <input className="ga-input" value={r.length} onChange={e=>updateRoll(idx,{length:e.target.value})} />
                   </div>
                   <div>
                     <label>Laize (mm)</label>
-                    <input className="ga-input" value={r.widthMm} onChange={e=>setRollField(i,"widthMm",e.target.value)} />
+                    <input className="ga-input" value={r.widthMm} onChange={e=>updateRoll(idx,{widthMm:e.target.value})} />
+                  </div>
+                  <div>
+                    <label>Lot fournisseur</label>
+                    <input className="ga-input" value={r.vendorLot} onChange={e=>updateRoll(idx,{vendorLot:e.target.value})} placeholder="ex. 24-09-B123" />
                   </div>
                   <div>
                     <label>Qualité</label>
-                    <select className="ga-input" value={r.quality} onChange={e=>setRollField(i,"quality",e.target.value)}>
+                    <select className="ga-input" value={r.quality} onChange={e=>updateRoll(idx,{quality:e.target.value})}>
                       <option>OK</option>
                       <option>Quarantaine</option>
                       <option>Rejet</option>
                     </select>
                   </div>
-                  <button className="ga-btn ghost" onClick={()=>removeRollRow(i)}>Supprimer</button>
+                  <button className="ga-btn ghost" onClick={()=>removeRoll(idx)}>Supprimer</button>
                   <div style={{gridColumn:"1 / -1"}}>
                     <label>Observations</label>
-                    <input className="ga-input" value={r.notes} onChange={e=>setRollField(i,"notes",e.target.value)} />
+                    <input className="ga-input" value={r.notes} onChange={e=>updateRoll(idx,{notes:e.target.value})} />
                   </div>
                 </div>
               ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="ga-divider" />
-            <div>
-              <label>Quantité (pièces) à réceptionner</label>
-              <input className="ga-input" type="number" value={piecesQty} onChange={e=>setPiecesQty(parseInt(e.target.value||"0",10))} />
             </div>
           </>
         )}
