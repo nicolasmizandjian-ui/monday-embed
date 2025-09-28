@@ -274,6 +274,31 @@ function removeRoll(idx) {
           // ... autres colonnes si besoin (QR, notes, liens vers Catalogue, etc.)
         });
 
+          // --- QR: payload & upload fichier dans COL_QR_ROLL ---
+          try {
+            const payload = {
+              type: "roll",
+              roll_item_id: newRollId,
+              parent_entry_id: entryItem.id,
+              dateIn,
+              bl,
+              supplier: (supplierTxt || entryItem.supplier || "").trim(),
+              category: refSelected?.categorie || category || "",
+              ref_sonefi: refSelected?.ref_sonefi || "",
+              ref_sellsy: refSelected?.ref_sellsy || "",
+              unit: "ML",
+              width_mm: parseFloat(r.widthMm || widthMm) || null,
+              length_ml: len,
+              vendor_lot: (r.vendorLot || "").trim(),
+              quality: r.quality || qualityDefault || "OK",
+              loc: (r.loc || loc || "").trim(),
+              notes: (r.notes || "").trim(),
+            };
+            await createAndAttachQrForRoll(newRollId, payload);
+          } catch (e) {
+            console.warn("QR attach failed for roll", newRollId, e);
+          }
+
         createdRollIds.push(newRollId);
         qtyReceived += len;
       }
@@ -291,6 +316,21 @@ function removeRoll(idx) {
       [COL_ROLLS_COUNT]: mode === "rolls" ? (parseInt(entryItem.nbRolls || 0, 10) + createdRollIds.length) : (entryItem.nbRolls || 0),
       [COL_LAST_RECEIPT]: dateIn,
     });
+
+    // 3.b Archive la ligne d'entrée si commande complète (disparition du board "ENTRÉES DE STOCK")
+    try {
+      const commanded = parseFloat(entryItem?.qtyCommanded) || 0;
+      const tolerance = RECEIPT_TOLERANCE ?? 0.005; // 0,5 %
+      const complete = commanded > 0 && newCum >= commanded * (1 - tolerance);
+      if (complete) {
+        await monday.api(`mutation ($id: ID!) { archive_item(item_id: $id) { id } }`, {
+          variables: { id: String(entryItem.id) }
+        });
+      }
+    } catch (e) {
+      console.warn("Archive entry failed", e);
+    }
+
 
     // 4) Journal (si tu as des subitems)
     // await appendJournalLine({ date: dateIn, bl, lot: mode==="rolls" ? "Voir rouleaux" : (vendorLot || ""), qty: qtyReceived, unit: mode==="rolls" ? "ML" : "UNITE", nbRolls: createdRollIds.length });
@@ -365,6 +405,27 @@ function removeRoll(idx) {
     const r = await monday.api(m, { variables: { parentId: String(parentId), itemName: name }});
     return r?.data?.create_subitem?.id;
   }
+// --- QR: upload fichier dans une colonne File (ex: COL_QR_ROLL)
+async function attachFileToColumn(itemId, columnId, file) {
+  const mutation = `
+    mutation ($itemId: ID!, $columnId: String!, $file: File!) {
+      add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) { id }
+    }
+  `;
+  await monday.api(mutation, {
+    variables: { itemId: String(itemId), columnId, file }
+  });
+}
+
+// --- QR: générer le PNG via un service HTTP (pas de lib) + l'attacher
+async function createAndAttachQrForRoll(newRollId, payload) {
+  const qrUrl = `https://quickchart.io/qr?text=${encodeURIComponent(JSON.stringify(payload))}&format=png&margin=0&size=512`;
+  const resp = await fetch(qrUrl);
+  if (!resp.ok) throw new Error("QR HTTP error");
+  const blob = await resp.blob();
+  const file = new File([blob], `QR_${newRollId}.png`, { type: "image/png" });
+  await attachFileToColumn(newRollId, COL_QR_ROLL, file);
+}
 
   // UI
   if (!open) return null;
