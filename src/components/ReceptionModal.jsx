@@ -150,7 +150,6 @@ function ReceptionModal({
   const [refSelected, setRefSelected] = useState(null)
   const [unit, setUnit] = useState(entryItem?.unit || "ML") // recopie unité de la ligne
   const [widthMm, setWidthMm] = useState(entryItem?.widthMm || "")
-  const [supplierTxt, setSupplierTxt] = useState(entryItem?.supplier || "")
   const [loc, setLoc] = useState("")
   const [qualityDefault, setQualityDefault] = useState("OK")
 
@@ -183,8 +182,8 @@ function ReceptionModal({
     setRefSelected(refRow)
     // Don't automatically change unit - let user control it based on catalog data
     // The unit should guide the operator about the product type
-    if (refRow?.unite_def && !unit) {
-      // Only set unit if not already set
+    if (refRow?.unite_def) {
+      // Set unit based on catalog to guide operator
       const catalogUnit = refRow.unite_def.toUpperCase()
       setUnit(catalogUnit)
 
@@ -227,7 +226,7 @@ function ReceptionModal({
       // validations communes
       if (!dateIn) throw new Error("Date de réception obligatoire.")
       if (!bl) throw new Error("N° BL obligatoire.")
-      if (!supplierTxt.trim()) throw new Error("Fournisseur obligatoire.")
+      if (!entryItem?.supplier?.trim()) throw new Error("Fournisseur obligatoire (depuis la commande).")
       if (!category) throw new Error("Catégorie obligatoire.")
       if (!refSelected) throw new Error("Référence SONEFI obligatoire (choisir dans la liste).")
 
@@ -272,10 +271,10 @@ function ReceptionModal({
 
       console.log("[v0] Starting validation with data:", {
         entryItemId: entryItem.id,
+        supplier: entryItem.supplier, // Use entryItem.supplier
         mode,
         rollsBoardId: ROLLS_BOARD_ID,
         rollsGroupId: ROLLS_GROUP_ID,
-        supplierTxt,
         refSelected,
         rolls: mode === "rolls" ? rolls : null,
         piecesQty: mode === "pieces" ? piecesQty : null,
@@ -307,7 +306,7 @@ function ReceptionModal({
           // ⚠️ Lot fournisseur par ROULEAU
           await changeCols(newRollId, {
             [COL_LINK_PARENT_ROLL]: { item_ids: [entryItem.id] },
-            [COL_SUPPLIER_ROLL]: (supplierTxt || entryItem.supplier || "").trim(),
+            [COL_SUPPLIER_ROLL]: entryItem.supplier.trim(), // Use entryItem.supplier
             [COL_CAT_ROLL]: refSelected?.categorie || category || "",
             [COL_REF_TEXT_ROLL]: refSelected?.ref_sonefi || "",
             [COL_LENGTH_ROLL]: len,
@@ -327,7 +326,7 @@ function ReceptionModal({
               parent_entry_id: entryItem.id,
               dateIn,
               bl,
-              supplier: (supplierTxt || entryItem.supplier || "").trim(),
+              supplier: entryItem.supplier.trim(), // Use entryItem.supplier
               category: refSelected?.categorie || category || "",
               ref_sonefi: refSelected?.ref_sonefi || "",
               ref_sellsy: refSelected?.ref_sellsy || "",
@@ -473,7 +472,7 @@ function ReceptionModal({
             <b>Produit :</b> {entryItem?.product}
           </div>
           <div>
-            <b>Fournisseur :</b> {supplierTxt}
+            <b>Fournisseur :</b> {entryItem?.supplier}
           </div>
           <div>
             <b>Unité :</b> {unit} · <b>Commandé :</b> {formatQty(entryItem?.qtyCommanded)} · <b>Reçu :</b>{" "}
@@ -511,18 +510,6 @@ function ReceptionModal({
           <div>
             <label>📄 N° BL</label>
             <input className="ga-input" value={bl} onChange={(e) => setBl(e.target.value)} />
-          </div>
-
-          <div>
-            <label>🏭 Fournisseur</label>
-            <select className="ga-input" value={supplierTxt} onChange={(e) => setSupplierTxt(e.target.value)}>
-              <option value="">— Choisir fournisseur —</option>
-              {supplierOptions.map((sup) => (
-                <option key={sup} value={sup}>
-                  {sup}
-                </option>
-              ))}
-            </select>
           </div>
 
           <div>
