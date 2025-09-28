@@ -183,7 +183,6 @@ function ReceptionModal({
     setRefSelected(refRow)
     if (refRow?.unite_def) setUnit(refRow.unite_def) // "ML", "UNITE", ...
     if (refRow?.laize_mm != null) setWidthMm(refRow.laize_mm) // nombre (mm)
-    if (refRow?.supplier_default) setSupplierTxt(refRow.supplier_default) // remplit le fournisseur
   }
 
   // 6) Helpers pour la table des rouleaux
@@ -205,7 +204,6 @@ function ReceptionModal({
     if (refSelected) {
       if (refSelected.unite_def && !entryItem?.unit) setUnit(refSelected.unite_def)
       if (refSelected.laize_mm != null && !entryItem?.widthMm) setWidthMm(refSelected.laize_mm)
-      if (refSelected.supplier_default) setSupplierTxt(refSelected.supplier_default)
     }
   }, [refSelected, entryItem])
 
@@ -214,13 +212,11 @@ function ReceptionModal({
       setErr("")
 
       // validations communes
-      if (!dateIn) throw new Error("Date obligatoire.")
+      if (!dateIn) throw new Error("Date de réception obligatoire.")
       if (!bl) throw new Error("N° BL obligatoire.")
+      if (!supplierTxt.trim()) throw new Error("Fournisseur obligatoire.")
       if (!category) throw new Error("Catégorie obligatoire.")
-      if (!refSelected) throw new Error("Réf SONEFI obligatoire (choisis dans la liste).")
-
-      // qtyLeft = quantité restante autorisée sur la ligne (tu l'as déjà calculée)
-      // RECEIPT_TOLERANCE doit être défini en haut du fichier (ex: 0.005)
+      if (!refSelected) throw new Error("Référence SONEFI obligatoire (choisir dans la liste).")
 
       if (mode === "rolls") {
         // --- Mode ROULEAUX (ML) ---
@@ -481,6 +477,19 @@ function ReceptionModal({
             <label>📄 N° BL</label>
             <input className="ga-input" value={bl} onChange={(e) => setBl(e.target.value)} />
           </div>
+
+          <div>
+            <label>🏭 Fournisseur</label>
+            <select className="ga-input" value={supplierTxt} onChange={(e) => setSupplierTxt(e.target.value)}>
+              <option value="">— Choisir fournisseur —</option>
+              {supplierOptions.map((sup) => (
+                <option key={sup} value={sup}>
+                  {sup}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label>🏷️ Lot fournisseur {isML ? "(obligatoire sinon Quarantaine)" : ""}</label>
             <input className="ga-input" value={vendorLot} onChange={(e) => setVendorLot(e.target.value)} />
