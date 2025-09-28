@@ -181,8 +181,21 @@ function ReceptionModal({
 
   function onPickRef(refRow) {
     setRefSelected(refRow)
-    if (refRow?.unite_def) setUnit(refRow.unite_def) // "ML", "UNITE", ...
-    if (refRow?.laize_mm != null) setWidthMm(refRow.laize_mm) // nombre (mm)
+    // Don't automatically change unit - let user control it based on catalog data
+    // The unit should guide the operator about the product type
+    if (refRow?.unite_def && !unit) {
+      // Only set unit if not already set
+      const catalogUnit = refRow.unite_def.toUpperCase()
+      setUnit(catalogUnit)
+
+      // Set mode based on catalog unit to guide operator
+      if (catalogUnit === "ML" || catalogUnit === "M2") {
+        setMode("rolls") // ML or M2 = obligatoirement des rouleaux
+      } else if (catalogUnit === "UNITE" || catalogUnit === "PC" || catalogUnit === "PIECE") {
+        setMode("pieces") // Pièces = pas de rouleaux
+      }
+    }
+    if (refRow?.laize_mm != null && !widthMm) setWidthMm(refRow.laize_mm)
   }
 
   // 6) Helpers pour la table des rouleaux
@@ -218,6 +231,17 @@ function ReceptionModal({
       if (!category) throw new Error("Catégorie obligatoire.")
       if (!refSelected) throw new Error("Référence SONEFI obligatoire (choisir dans la liste).")
 
+      const catalogUnit = refSelected?.unite_def?.toUpperCase() || ""
+      if (catalogUnit === "ML" || catalogUnit === "M2") {
+        if (mode !== "rolls") {
+          throw new Error(`Cette référence (${catalogUnit}) nécessite obligatoirement des rouleaux.`)
+        }
+      } else if (catalogUnit === "UNITE" || catalogUnit === "PC" || catalogUnit === "PIECE") {
+        if (mode !== "pieces") {
+          throw new Error(`Cette référence (${catalogUnit}) ne peut pas être en rouleaux.`)
+        }
+      }
+
       if (mode === "rolls") {
         // --- Mode ROULEAUX (ML) ---
         if (rolls.length === 0) throw new Error("Ajoute au moins un rouleau.")
@@ -245,6 +269,17 @@ function ReceptionModal({
       }
 
       setLoading(true)
+
+      console.log("[v0] Starting validation with data:", {
+        entryItemId: entryItem.id,
+        mode,
+        rollsBoardId: ROLLS_BOARD_ID,
+        rollsGroupId: ROLLS_GROUP_ID,
+        supplierTxt,
+        refSelected,
+        rolls: mode === "rolls" ? rolls : null,
+        piecesQty: mode === "pieces" ? piecesQty : null,
+      })
 
       // 1) Verrouiller la ligne d’achat
       await changeCols(entryItem.id, {

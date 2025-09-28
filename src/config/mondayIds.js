@@ -3,7 +3,7 @@
 
 // Boards
 export const ENTRY_BOARD_ID = "7678082330" // Board "ENTRÉES DE STOCK"
-export const ROLLS_BOARD_ID = "1234567891" // Board "STOCK ROULEAUX"
+export const ROLLS_BOARD_ID = "7677892120" // Board "STOCK ROULEAUX" - https://sonefi.monday.com/boards/7677892120/views/168307945
 export const MOVEMENTS_BOARD_ID = "1234567892" // Board "MOUVEMENTS"
 export const PRODUCTION_BOARD_ID = "1234567893" // Board "PRODUCTION"
 export const ORDERS_BOARD_ID = "1234567894" // Board "COMMANDES"
