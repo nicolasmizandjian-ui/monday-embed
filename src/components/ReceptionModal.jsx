@@ -66,16 +66,20 @@ function ReceptionModal({
 
       // 1) Normaliser les lignes utiles
       const rows = rowsRaw
-        .map((r) => ({
-          categorie: safe(r.categorie),
-          ref_sonefi: safe(r.ref_sonefi),
-          ref_sellsy: safe(r.ref_sellsy),
-          unite_def: safe(r.unite_def).toUpperCase(),
-          laize_mm: r.laize_mm ?? "",
-          supplier_default: safe(r.supplier_default),
-          actif: safe(r.actif),
-        }))
-        .filter((r) => r.ref_sonefi && r.categorie && !isJunkCat(r.categorie));
+          .map((r) => ({
+            // Mapping des clés du JSON (MAJUSCULES) vers les noms internes (minuscules)
+            categorie: safe(r.CATEGORIE),
+            ref_sonefi: safe(r.REFERENCE_SONEFI),
+            ref_sellsy: safe(r.REFERENCE_SELLSY),
+            supplier_default: safe(r.FOURNISSEUR),
+            // Ces champs n’existent pas (ou pas toujours) dans ton JSON : on garde des valeurs par défaut
+            unite_def: safe(r.UNITE_DEF || ""),
+            laize_mm: r.LAIZE_MM ?? "",
+            actif: safe(r.ACTIF || ""),
+          }))
+          .filter((r) =>
+            r.ref_sonefi && r.ref_sonefi !== "-" && r.categorie && !isJunkCat(r.categorie)
+          );
 
       setCatalog(rows);
 
